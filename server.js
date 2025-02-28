@@ -71,7 +71,7 @@ io.on('connection', (socket) => {
         if (room) {
             room.isPlaying = true;
             room.currentTime = currentTime;
-            socket.to(roomId).emit('play', currentTime);
+            io.to(roomId).emit('play', currentTime);
         }
     });
 
@@ -80,7 +80,7 @@ io.on('connection', (socket) => {
         if (room) {
             room.isPlaying = false;
             room.currentTime = currentTime;
-            socket.to(roomId).emit('pause', currentTime);
+            io.to(roomId).emit('pause', currentTime);
         }
     });
 

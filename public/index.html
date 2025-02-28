@@ -183,19 +183,11 @@
         }
 
         function playMusic() {
-            audioPlayer.play().catch(error => {
-                showError('Şarkı çalınırken hata: ' + error.message);
-            });
-            isPlaying = true;
             socket.emit('play', { roomId, currentTime: audioPlayer.currentTime });
-            updatePlaylistUI();
         }
 
         function pauseMusic() {
-            audioPlayer.pause();
-            isPlaying = false;
             socket.emit('pause', { roomId, currentTime: audioPlayer.currentTime });
-            updatePlaylistUI();
         }
 
         function playSong(index) {
@@ -343,12 +335,16 @@
         });
 
         // Oynatma durumu değişikliklerini izle
-        audioPlayer.addEventListener('playing', () => {
-            showSuccess('Şarkı çalınıyor');
+        audioPlayer.addEventListener('play', () => {
+            if (!isPlaying) {
+                playMusic();
+            }
         });
 
         audioPlayer.addEventListener('pause', () => {
-            showSuccess('Şarkı duraklatıldı');
+            if (isPlaying) {
+                pauseMusic();
+            }
         });
 
         // Şarkı bittiğinde sonraki şarkıya geç
