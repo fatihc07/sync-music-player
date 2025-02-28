@@ -6,6 +6,8 @@
     <title>Sync Music Player</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/aurora.js/0.4.2/aurora.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/flac.js/0.3.0/flac.min.js"></script>
     <style>
         .gradient-bg {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -146,40 +148,80 @@
 
         function addLocalFile() {
             const files = document.getElementById('localFile').files;
-            const allowedTypes = ['audio/mp3', 'audio/mpeg', 'audio/flac', 'audio/wav'];
             
             for (let file of files) {
-                // Dosya uzantısını kontrol et
                 const extension = file.name.split('.').pop().toLowerCase();
-                if (!['mp3', 'flac', 'wav'].includes(extension)) {
-                    const errorDiv = document.createElement('div');
-                    errorDiv.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg';
-                    errorDiv.textContent = `${file.name} desteklenmeyen bir dosya formatı`;
-                    document.body.appendChild(errorDiv);
-                    setTimeout(() => errorDiv.remove(), 3000);
-                    continue;
-                }
-
-                // Dosya boyutunu kontrol et (50MB limit)
+                
+                // Dosya boyutu kontrolü
                 if (file.size > 50 * 1024 * 1024) {
-                    const errorDiv = document.createElement('div');
-                    errorDiv.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg';
-                    errorDiv.textContent = `${file.name} dosyası çok büyük (Max: 50MB)`;
-                    document.body.appendChild(errorDiv);
-                    setTimeout(() => errorDiv.remove(), 3000);
+                    showError(`${file.name} dosyası çok büyük (Max: 50MB)`);
                     continue;
                 }
 
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const song = {
-                        name: file.name,
-                        data: e.target.result
+                if (extension === 'flac') {
+                    // FLAC dosyasını işle
+                    handleFlacFile(file);
+                } else if (['mp3', 'wav'].includes(extension)) {
+                    // MP3 ve WAV dosyalarını normal şekilde işle
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const song = {
+                            name: file.name,
+                            data: e.target.result,
+                            type: extension
+                        };
+                        socket.emit('addSong', { roomId, song });
                     };
-                    socket.emit('addSong', { roomId, song });
-                };
-                reader.readAsDataURL(file);
+                    reader.readAsDataURL(file);
+                } else {
+                    showError(`${file.name} desteklenmeyen bir dosya formatı`);
+                }
             }
+        }
+
+        // FLAC dosyalarını işlemek için yeni fonksiyon
+        function handleFlacFile(file) {
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    // FLAC dosyasını ArrayBuffer olarak oku
+                    const arrayBuffer = e.target.result;
+                    
+                    // FLAC decoder'ı oluştur
+                    const flacDecoder = new AV.Decoder.FLAC();
+                    
+                    // FLAC verisini decode et
+                    flacDecoder.on('data', function(buffer) {
+                        // Decode edilmiş veriyi AudioBuffer'a dönüştür
+                        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                        audioContext.decodeAudioData(buffer.buffer, function(decodedData) {
+                            const song = {
+                                name: file.name,
+                                data: decodedData,
+                                type: 'flac'
+                            };
+                            socket.emit('addSong', { roomId, song });
+                        });
+                    });
+                    
+                    // FLAC verisini decoder'a gönder
+                    flacDecoder.write(arrayBuffer);
+                    flacDecoder.end();
+                } catch (error) {
+                    showError(`${file.name} dosyası işlenirken hata oluştu`);
+                    console.error('FLAC decode error:', error);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // Hata mesajı gösterme fonksiyonu
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+            errorDiv.textContent = message;
+            document.body.appendChild(errorDiv);
+            setTimeout(() => errorDiv.remove(), 3000);
         }
 
         function playMusic() {
@@ -238,9 +280,24 @@
 
         socket.on('playSong', (data) => {
             currentTrack = data.index;
-            audioPlayer.src = data.song.data;
-            audioPlayer.play();
-            socket.emit('play', { roomId, currentTime: 0 });
+            
+            if (data.song.type === 'flac') {
+                // FLAC dosyasını çal
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioContext.createBufferSource();
+                source.buffer = data.song.data;
+                source.connect(audioContext.destination);
+                source.start(0);
+                
+                // Oynatma durumunu güncelle
+                audioPlayer.currentTime = 0;
+                socket.emit('play', { roomId, currentTime: 0 });
+            } else {
+                // MP3 ve WAV dosyalarını normal şekilde çal
+                audioPlayer.src = data.song.data;
+                audioPlayer.play();
+                socket.emit('play', { roomId, currentTime: 0 });
+            }
         });
 
         socket.on('syncState', (state) => {
