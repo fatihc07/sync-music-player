@@ -150,82 +150,32 @@
             const files = document.getElementById('localFile').files;
             
             for (let file of files) {
-                const extension = file.name.split('.').pop().toLowerCase();
-                
                 // Dosya boyutu kontrolü
                 if (file.size > 50 * 1024 * 1024) {
                     showError(`${file.name} dosyası çok büyük (Max: 50MB)`);
                     continue;
                 }
 
-                if (extension === 'flac') {
-                    // FLAC dosyasını işle
-                    handleFlacFile(file);
-                } else if (['mp3', 'wav'].includes(extension)) {
-                    // MP3 ve WAV dosyalarını normal şekilde işle
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        const song = {
-                            name: file.name,
-                            data: e.target.result,
-                            type: extension
-                        };
-                        socket.emit('addSong', { roomId, song });
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const song = {
+                        name: file.name,
+                        data: e.target.result
                     };
-                    reader.readAsDataURL(file);
-                } else {
-                    showError(`${file.name} desteklenmeyen bir dosya formatı`);
-                }
+                    socket.emit('addSong', { roomId, song });
+                    showSuccess(`${file.name} başarıyla eklendi`);
+                };
+                reader.onerror = function() {
+                    showError(`${file.name} yüklenirken hata oluştu`);
+                };
+                reader.readAsDataURL(file);
             }
         }
 
-        // FLAC dosyalarını işlemek için yeni fonksiyon
-        function handleFlacFile(file) {
-            const reader = new FileReader();
-            reader.onload = async function(e) {
-                try {
-                    // FLAC dosyasını ArrayBuffer olarak oku
-                    const arrayBuffer = e.target.result;
-                    
-                    // FLAC decoder'ı oluştur
-                    const flacDecoder = new AV.Decoder.FLAC();
-                    
-                    // FLAC verisini decode et
-                    flacDecoder.on('data', function(buffer) {
-                        // Decode edilmiş veriyi AudioBuffer'a dönüştür
-                        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                        audioContext.decodeAudioData(buffer.buffer, function(decodedData) {
-                            const song = {
-                                name: file.name,
-                                data: decodedData,
-                                type: 'flac'
-                            };
-                            socket.emit('addSong', { roomId, song });
-                        });
-                    });
-                    
-                    // FLAC verisini decoder'a gönder
-                    flacDecoder.write(arrayBuffer);
-                    flacDecoder.end();
-                } catch (error) {
-                    showError(`${file.name} dosyası işlenirken hata oluştu`);
-                    console.error('FLAC decode error:', error);
-                }
-            };
-            reader.readAsArrayBuffer(file);
-        }
-
-        // Hata mesajı gösterme fonksiyonu
-        function showError(message) {
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg z-50';
-            errorDiv.textContent = message;
-            document.body.appendChild(errorDiv);
-            setTimeout(() => errorDiv.remove(), 3000);
-        }
-
         function playMusic() {
-            audioPlayer.play();
+            audioPlayer.play().catch(error => {
+                showError('Şarkı çalınırken hata: ' + error.message);
+            });
             socket.emit('play', { roomId, currentTime: audioPlayer.currentTime });
         }
 
@@ -260,7 +210,7 @@
                 // Oynat butonu
                 const playButton = document.createElement('button');
                 playButton.className = 'w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20';
-                playButton.innerHTML = '<i class="fas fa-play"></i>';
+                playButton.innerHTML = index === currentTrack ? '<i class="fas fa-pause"></i>' : '<i class="fas fa-play"></i>';
                 li.appendChild(playButton);
 
                 li.onclick = () => playSong(index);
@@ -270,7 +220,9 @@
 
         socket.on('play', (currentTime) => {
             audioPlayer.currentTime = currentTime;
-            audioPlayer.play();
+            audioPlayer.play().catch(error => {
+                showError('Şarkı çalınırken hata: ' + error.message);
+            });
         });
 
         socket.on('pause', (currentTime) => {
@@ -280,57 +232,89 @@
 
         socket.on('playSong', (data) => {
             currentTrack = data.index;
-            
-            if (data.song.type === 'flac') {
-                // FLAC dosyasını çal
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const source = audioContext.createBufferSource();
-                source.buffer = data.song.data;
-                source.connect(audioContext.destination);
-                source.start(0);
-                
-                // Oynatma durumunu güncelle
-                audioPlayer.currentTime = 0;
-                socket.emit('play', { roomId, currentTime: 0 });
-            } else {
-                // MP3 ve WAV dosyalarını normal şekilde çal
-                audioPlayer.src = data.song.data;
-                audioPlayer.play();
-                socket.emit('play', { roomId, currentTime: 0 });
-            }
+            audioPlayer.src = data.song.data;
+            audioPlayer.play().catch(error => {
+                showError('Şarkı çalınırken hata: ' + error.message);
+            });
+            socket.emit('play', { roomId, currentTime: 0 });
         });
 
         socket.on('syncState', (state) => {
             if (state.isPlaying) {
                 audioPlayer.currentTime = state.currentTime;
-                audioPlayer.play();
+                audioPlayer.play().catch(error => {
+                    showError('Şarkı çalınırken hata: ' + error.message);
+                });
             } else {
                 audioPlayer.currentTime = state.currentTime;
                 audioPlayer.pause();
             }
         });
 
-        socket.on('error', (message) => {
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg';
-            errorDiv.textContent = message;
-            document.body.appendChild(errorDiv);
-            setTimeout(() => errorDiv.remove(), 3000);
-        });
+        // Hata ve başarı mesajları için yardımcı fonksiyonlar
+        function showError(message) {
+            showNotification(message, 'error');
+        }
 
-        // Link kopyalama fonksiyonu ekleyelim
+        function showSuccess(message) {
+            showNotification(message, 'success');
+        }
+
+        function showNotification(message, type) {
+            const div = document.createElement('div');
+            div.className = `fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 ${
+                type === 'error' ? 'bg-red-600' : 'bg-green-600'
+            } text-white`;
+            div.textContent = message;
+            document.body.appendChild(div);
+            setTimeout(() => div.remove(), 3000);
+        }
+
+        // Link kopyalama fonksiyonu
         function copyLink() {
             const roomLink = `${window.location.origin}?room=${roomId}`;
             navigator.clipboard.writeText(roomLink).then(() => {
-                const successDiv = document.createElement('div');
-                successDiv.className = 'fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg';
-                successDiv.textContent = 'Link kopyalandı!';
-                document.body.appendChild(successDiv);
-                setTimeout(() => successDiv.remove(), 3000);
+                showSuccess('Link kopyalandı!');
             }).catch(err => {
-                console.error('Link kopyalanamadı:', err);
+                showError('Link kopyalanamadı');
+                console.error('Link kopyalama hatası:', err);
             });
         }
+
+        // Audio player hata yönetimi
+        audioPlayer.addEventListener('error', (e) => {
+            let errorMessage = 'Bilinmeyen bir hata oluştu';
+            if (e.target.error) {
+                switch (e.target.error.code) {
+                    case e.target.error.MEDIA_ERR_ABORTED:
+                        errorMessage = 'Şarkı yüklemesi iptal edildi';
+                        break;
+                    case e.target.error.MEDIA_ERR_NETWORK:
+                        errorMessage = 'Ağ hatası oluştu';
+                        break;
+                    case e.target.error.MEDIA_ERR_DECODE:
+                        errorMessage = 'Şarkı çözümlenemedi';
+                        break;
+                    case e.target.error.MEDIA_ERR_SRC_NOT_SUPPORTED:
+                        errorMessage = 'Bu ses formatı desteklenmiyor';
+                        break;
+                }
+            }
+            showError(errorMessage);
+        });
+
+        // Oynatma durumu değişikliklerini izle
+        audioPlayer.addEventListener('playing', () => {
+            showSuccess('Şarkı çalınıyor');
+        });
+
+        audioPlayer.addEventListener('pause', () => {
+            showSuccess('Şarkı duraklatıldı');
+        });
+
+        audioPlayer.addEventListener('ended', () => {
+            showSuccess('Şarkı bitti');
+        });
     </script>
 </body>
 </html>
