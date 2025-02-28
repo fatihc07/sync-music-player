@@ -35,12 +35,23 @@ io.on('connection', (socket) => {
         if (room) {
             socket.join(roomId);
             room.users.set(socket.id, username);
+            
+            // Tüm kullanıcılara güncel kullanıcı listesini gönder
+            const users = Array.from(room.users.entries()).map(([id, name]) => ({
+                id,
+                name
+            }));
+            
+            io.to(roomId).emit('updateUsers', users);
             socket.emit('updatePlaylist', room.songs);
             socket.emit('syncState', {
                 currentTime: room.currentTime,
                 isPlaying: room.isPlaying,
                 currentTrack: room.currentTrack
             });
+            
+            // Yeni kullanıcı katıldı bildirimi
+            io.to(roomId).emit('userJoined', { id: socket.id, name: username });
         } else {
             socket.emit('error', 'Oda bulunamadı');
         }
@@ -100,7 +111,19 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         rooms.forEach((room, roomId) => {
             if (room.users.has(socket.id)) {
+                const username = room.users.get(socket.id);
                 room.users.delete(socket.id);
+                
+                // Kullanıcı ayrıldı bildirimi
+                io.to(roomId).emit('userLeft', { id: socket.id, name: username });
+                
+                // Güncel kullanıcı listesini gönder
+                const users = Array.from(room.users.entries()).map(([id, name]) => ({
+                    id,
+                    name
+                }));
+                io.to(roomId).emit('updateUsers', users);
+                
                 if (room.users.size === 0) {
                     rooms.delete(roomId);
                 }

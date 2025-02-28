@@ -52,6 +52,18 @@
             </div>
         </div>
 
+        <!-- Kullanıcılar Bölümü -->
+        <div class="glass-effect rounded-xl p-6 mb-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold flex items-center gap-2">
+                    <i class="fas fa-users"></i>
+                    Odadaki Kullanıcılar
+                </h3>
+                <span id="userCount" class="bg-indigo-600 px-3 py-1 rounded-full text-sm">0 Kullanıcı</span>
+            </div>
+            <div class="flex flex-wrap gap-2" id="userList"></div>
+        </div>
+
         <!-- Müzik Çalar Bölümü -->
         <div id="playerSection" style="display: none;" class="space-y-6">
             <!-- Kontroller -->
@@ -104,6 +116,9 @@
         let currentPlaylist = [];
         let isPlaying = false;
 
+        // Global değişkenlere ekleyelim
+        let currentUsers = new Map();
+
         // URL'den room ID'yi al
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('room')) {
@@ -146,6 +161,7 @@
                 document.getElementById('loginSection').style.display = 'none';
                 document.getElementById('createJoinSection').style.display = 'none';
                 document.getElementById('playerSection').style.display = 'block';
+                document.querySelector('.glass-effect').style.display = 'block'; // Kullanıcılar bölümünü göster
                 socket.emit('joinRoom', { roomId, username });
             }
         }
@@ -281,6 +297,49 @@
                 playlist.appendChild(li);
             });
         }
+
+        // Kullanıcı listesini güncelleyen fonksiyon
+        function updateUsersUI(users) {
+            const userList = document.getElementById('userList');
+            const userCount = document.getElementById('userCount');
+            
+            userList.innerHTML = '';
+            currentUsers.clear();
+            
+            users.forEach(user => {
+                currentUsers.set(user.id, user.name);
+                const userElement = document.createElement('div');
+                userElement.className = `
+                    flex items-center gap-2 px-3 py-2 rounded-lg
+                    ${user.id === socket.id ? 'bg-indigo-600' : 'bg-white/10'}
+                `;
+                
+                userElement.innerHTML = `
+                    <i class="fas fa-user"></i>
+                    <span>${user.name}</span>
+                    ${user.id === socket.id ? '<span class="text-xs">(Sen)</span>' : ''}
+                `;
+                
+                userList.appendChild(userElement);
+            });
+            
+            userCount.textContent = `${users.length} Kullanıcı`;
+        }
+
+        // Event listener'ları ekleyelim
+        socket.on('updateUsers', (users) => {
+            updateUsersUI(users);
+        });
+
+        socket.on('userJoined', (user) => {
+            if (user.id !== socket.id) {
+                showSuccess(`${user.name} odaya katıldı`);
+            }
+        });
+
+        socket.on('userLeft', (user) => {
+            showSuccess(`${user.name} odadan ayrıldı`);
+        });
 
         // Hata ve başarı mesajları için yardımcı fonksiyonlar
         function showError(message) {
