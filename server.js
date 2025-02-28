@@ -5,7 +5,8 @@ const io = require('socket.io')(http, {
     cors: {
         origin: "*",
         methods: ["GET", "POST"]
-    }
+    },
+    maxHttpBufferSize: 1e8 // 100 MB limit
 });
 
 app.use(express.static('public'));
@@ -22,8 +23,9 @@ io.on('connection', (socket) => {
         rooms.set(roomId, {
             songs: [],
             users: new Map(),
-            currentTime: 0,
-            isPlaying: false
+            currentTrack: 0,
+            isPlaying: false,
+            currentTime: 0
         });
         socket.emit('roomCreated', roomId);
     });
@@ -36,7 +38,8 @@ io.on('connection', (socket) => {
             socket.emit('updatePlaylist', room.songs);
             socket.emit('syncState', {
                 currentTime: room.currentTime,
-                isPlaying: room.isPlaying
+                isPlaying: room.isPlaying,
+                currentTrack: room.currentTrack
             });
         } else {
             socket.emit('error', 'Oda bulunamadı');
@@ -48,6 +51,18 @@ io.on('connection', (socket) => {
         if (room) {
             room.songs.push(song);
             io.to(roomId).emit('updatePlaylist', room.songs);
+            
+            // Eğer ilk şarkıysa veya hiçbir şarkı çalmıyorsa otomatik başlat
+            if (room.songs.length === 1 || !room.isPlaying) {
+                const index = room.songs.length - 1;
+                room.currentTrack = index;
+                room.isPlaying = true;
+                room.currentTime = 0;
+                io.to(roomId).emit('playSong', { 
+                    song: room.songs[index], 
+                    index: index 
+                });
+            }
         }
     });
 
@@ -56,7 +71,7 @@ io.on('connection', (socket) => {
         if (room) {
             room.isPlaying = true;
             room.currentTime = currentTime;
-            io.to(roomId).emit('play', currentTime);
+            socket.to(roomId).emit('play', currentTime);
         }
     });
 
@@ -65,14 +80,20 @@ io.on('connection', (socket) => {
         if (room) {
             room.isPlaying = false;
             room.currentTime = currentTime;
-            io.to(roomId).emit('pause', currentTime);
+            socket.to(roomId).emit('pause', currentTime);
         }
     });
 
     socket.on('playSong', ({ roomId, index }) => {
         const room = rooms.get(roomId);
         if (room && room.songs[index]) {
-            io.to(roomId).emit('playSong', { song: room.songs[index], index });
+            room.currentTrack = index;
+            room.isPlaying = true;
+            room.currentTime = 0;
+            io.to(roomId).emit('playSong', { 
+                song: room.songs[index], 
+                index: index 
+            });
         }
     });
 
