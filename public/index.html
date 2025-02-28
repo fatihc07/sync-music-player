@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sync Music Player</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #playlist {
+            list-style: none;
+            padding: 0;
+        }
+        .playlist-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f0f0f0;
+            cursor: pointer;
+        }
+        .playlist-item:hover {
+            background: #e0e0e0;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        #loginSection, #createJoinSection {
+            margin-bottom: 20px;
+        }
+        .current-song {
+            background: #d0d0d0 !important;
+        }
+        #roomLink {
+            padding: 10px;
+            background: #f0f0f0;
+            margin: 10px 0;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <div id="createJoinSection">
+        <button onclick="createRoom()">Yeni Oda Oluştur</button>
+        <div id="roomLink" style="display: none;"></div>
+    </div>
+
+    <div id="loginSection" style="display: none;">
+        <input type="text" id="username" placeholder="Kullanıcı adı">
+        <button onclick="login()">Giriş Yap</button>
+    </div>
+
+    <div id="playerSection" style="display: none;">
+        <h2>Müzik Çalar</h2>
+        <div class="controls">
+            <button onclick="playMusic()">Oynat</button>
+            <button onclick="pauseMusic()">Duraklat</button>
+            <input type="file" id="localFile" accept="audio/*" onchange="addLocalFile()" multiple>
+        </div>
+        
+        <audio id="audioPlayer"></audio>
+        
+        <h3>Çalma Listesi</h3>
+        <ul id="playlist"></ul>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.3.2/socket.io.js"></script>
+    <script>
+        const socket = io(window.location.origin);
+        let username = '';
+        let currentTrack = 0;
+        let roomId = '';
+        const audioPlayer = document.getElementById('audioPlayer');
+        const playlist = document.getElementById('playlist');
+
+        // URL'den room ID'yi al
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('room')) {
+            roomId = urlParams.get('room');
+            document.getElementById('createJoinSection').style.display = 'none';
+            document.getElementById('loginSection').style.display = 'block';
+        }
+
+        function createRoom() {
+            socket.emit('createRoom');
+        }
+
+        socket.on('roomCreated', (newRoomId) => {
+            roomId = newRoomId;
+            const roomLink = `${window.location.origin}?room=${roomId}`;
+            const roomLinkElement = document.getElementById('roomLink');
+            roomLinkElement.innerHTML = `
+                <p>Oda ID: ${roomId}</p>
+                <p>Oda Linki: <a href="${roomLink}">${roomLink}</a></p>
+                <button onclick="copyLink()">Linki Kopyala</button>
+            `;
+            roomLinkElement.style.display = 'block';
+            document.getElementById('loginSection').style.display = 'block';
+        });
+
+        function login() {
+            username = document.getElementById('username').value;
+            if (username.trim() !== '') {
+                document.getElementById('loginSection').style.display = 'none';
+                document.getElementById('createJoinSection').style.display = 'none';
+                document.getElementById('playerSection').style.display = 'block';
+                socket.emit('joinRoom', { roomId, username });
+            }
+        }
+
+        function addLocalFile() {
+            const files = document.getElementById('localFile').files;
+            for (let file of files) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const song = {
+                        name: file.name,
+                        data: e.target.result
+                    };
+                    socket.emit('addSong', { roomId, song });
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function playMusic() {
+            audioPlayer.play();
+            socket.emit('play', { roomId, currentTime: audioPlayer.currentTime });
+        }
+
+        function pauseMusic() {
+            audioPlayer.pause();
+            socket.emit('pause', { roomId, currentTime: audioPlayer.currentTime });
+        }
+
+        function playSong(index) {
+            currentTrack = index;
+            socket.emit('playSong', { roomId, index });
+        }
+
+        socket.on('updatePlaylist', (songs) => {
+            playlist.innerHTML = '';
+            songs.forEach((song, index) => {
+                const li = document.createElement('li');
+                li.className = 'playlist-item';
+                if (index === currentTrack) {
+                    li.classList.add('current-song');
+                }
+                li.textContent = song.name;
+                li.onclick = () => playSong(index);
+                playlist.appendChild(li);
+            });
+        });
+
+        socket.on('play', (currentTime) => {
+            audioPlayer.currentTime = currentTime;
+            audioPlayer.play();
+        });
+
+        socket.on('pause', (currentTime) => {
+            audioPlayer.currentTime = currentTime;
+            audioPlayer.pause();
+        });
+
+        socket.on('playSong', (data) => {
+            currentTrack = data.index;
+            audioPlayer.src = data.song.data;
+            audioPlayer.play();
+            socket.emit('play', { roomId, currentTime: 0 });
+        });
+
+        socket.on('syncState', (state) => {
+            if (state.isPlaying) {
+                audioPlayer.currentTime = state.currentTime;
+                audioPlayer.play();
+            } else {
+                audioPlayer.currentTime = state.currentTime;
+                audioPlayer.pause();
+            }
+        });
+
+        socket.on('error', (message) => {
+            alert(message);
+        });
+
+        // Link kopyalama fonksiyonu ekleyelim
+        function copyLink() {
+            const roomLink = `${window.location.origin}?room=${roomId}`;
+            navigator.clipboard.writeText(roomLink).then(() => {
+                alert('Link kopyalandı!');
+            }).catch(err => {
+                console.error('Link kopyalanamadı:', err);
+            });
+        }
+    </script>
+</body>
+</html>

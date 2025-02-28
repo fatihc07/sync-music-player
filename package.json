@@ -1,0 +1,16 @@
+{
+  "name": "sync-music-player",
+  "version": "1.0.0",
+  "description": "Synchronized Music Player",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.17.1",
+    "socket.io": "^4.3.2"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
