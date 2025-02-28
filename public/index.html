@@ -4,66 +4,88 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sync Music Player</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
-        #playlist {
-            list-style: none;
-            padding: 0;
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }
         .playlist-item {
-            padding: 10px;
-            margin: 5px 0;
-            background: #f0f0f0;
-            cursor: pointer;
+            transition: all 0.3s ease;
         }
         .playlist-item:hover {
-            background: #e0e0e0;
+            transform: translateX(10px);
         }
-        .controls {
-            margin: 20px 0;
-        }
-        #loginSection, #createJoinSection {
-            margin-bottom: 20px;
-        }
-        .current-song {
-            background: #d0d0d0 !important;
-        }
-        #roomLink {
-            padding: 10px;
-            background: #f0f0f0;
-            margin: 10px 0;
-            word-break: break-all;
+        .animate-pulse-slow {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
     </style>
 </head>
-<body>
-    <div id="createJoinSection">
-        <button onclick="createRoom()">Yeni Oda Oluştur</button>
-        <div id="roomLink" style="display: none;"></div>
-    </div>
+<body class="gradient-bg min-h-screen text-white">
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <h1 class="text-4xl font-bold text-center mb-8">🎵 Sync Music Player</h1>
 
-    <div id="loginSection" style="display: none;">
-        <input type="text" id="username" placeholder="Kullanıcı adı">
-        <button onclick="login()">Giriş Yap</button>
-    </div>
-
-    <div id="playerSection" style="display: none;">
-        <h2>Müzik Çalar</h2>
-        <div class="controls">
-            <button onclick="playMusic()">Oynat</button>
-            <button onclick="pauseMusic()">Duraklat</button>
-            <input type="file" id="localFile" accept="audio/*" onchange="addLocalFile()" multiple>
+        <!-- Oda Oluşturma Bölümü -->
+        <div id="createJoinSection" class="glass-effect rounded-xl p-6 mb-6">
+            <button onclick="createRoom()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300 flex items-center justify-center gap-2">
+                <i class="fas fa-plus-circle"></i>
+                Yeni Oda Oluştur
+            </button>
+            <div id="roomLink" style="display: none;" class="mt-4 p-4 bg-white/10 rounded-lg"></div>
         </div>
-        
-        <audio id="audioPlayer"></audio>
-        
-        <h3>Çalma Listesi</h3>
-        <ul id="playlist"></ul>
+
+        <!-- Giriş Bölümü -->
+        <div id="loginSection" style="display: none;" class="glass-effect rounded-xl p-6 mb-6">
+            <div class="flex gap-3">
+                <input type="text" id="username" placeholder="Kullanıcı adınız" 
+                    class="flex-1 px-4 py-2 rounded-lg bg-white/10 border border-white/20 focus:outline-none focus:border-indigo-500">
+                <button onclick="login()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300">
+                    <i class="fas fa-sign-in-alt mr-2"></i>Giriş Yap
+                </button>
+            </div>
+        </div>
+
+        <!-- Müzik Çalar Bölümü -->
+        <div id="playerSection" style="display: none;" class="space-y-6">
+            <!-- Kontroller -->
+            <div class="glass-effect rounded-xl p-6">
+                <div class="flex flex-col md:flex-row items-center gap-4">
+                    <div class="flex gap-2 flex-1">
+                        <button onclick="playMusic()" class="bg-green-600 hover:bg-green-700 text-white font-bold p-3 rounded-full transition duration-300">
+                            <i class="fas fa-play"></i>
+                        </button>
+                        <button onclick="pauseMusic()" class="bg-red-600 hover:bg-red-700 text-white font-bold p-3 rounded-full transition duration-300">
+                            <i class="fas fa-pause"></i>
+                        </button>
+                    </div>
+                    <div class="flex-1">
+                        <label class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg cursor-pointer transition duration-300 flex items-center justify-center gap-2">
+                            <i class="fas fa-music mr-2"></i>
+                            Müzik Ekle
+                            <input type="file" id="localFile" accept="audio/*" onchange="addLocalFile()" multiple class="hidden">
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="mt-4">
+                    <audio id="audioPlayer" class="w-full" controls></audio>
+                </div>
+            </div>
+
+            <!-- Çalma Listesi -->
+            <div class="glass-effect rounded-xl p-6">
+                <h3 class="text-xl font-bold mb-4 flex items-center gap-2">
+                    <i class="fas fa-list"></i>
+                    Çalma Listesi
+                </h3>
+                <ul id="playlist" class="space-y-2"></ul>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.3.2/socket.io.js"></script>
@@ -92,9 +114,20 @@
             const roomLink = `${window.location.origin}?room=${roomId}`;
             const roomLinkElement = document.getElementById('roomLink');
             roomLinkElement.innerHTML = `
-                <p>Oda ID: ${roomId}</p>
-                <p>Oda Linki: <a href="${roomLink}">${roomLink}</a></p>
-                <button onclick="copyLink()">Linki Kopyala</button>
+                <div class="space-y-3">
+                    <div class="flex items-center gap-2">
+                        <span class="font-bold">Oda ID:</span>
+                        <span class="bg-white/10 px-3 py-1 rounded">${roomId}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="font-bold">Oda Linki:</span>
+                        <a href="${roomLink}" class="text-indigo-300 hover:text-indigo-400 break-all">${roomLink}</a>
+                    </div>
+                    <button onclick="copyLink()" class="bg-white/10 hover:bg-white/20 text-white font-bold py-2 px-4 rounded-lg transition duration-300 flex items-center gap-2">
+                        <i class="fas fa-copy"></i>
+                        Linki Kopyala
+                    </button>
+                </div>
             `;
             roomLinkElement.style.display = 'block';
             document.getElementById('loginSection').style.display = 'block';
@@ -144,11 +177,26 @@
             playlist.innerHTML = '';
             songs.forEach((song, index) => {
                 const li = document.createElement('li');
-                li.className = 'playlist-item';
-                if (index === currentTrack) {
-                    li.classList.add('current-song');
-                }
-                li.textContent = song.name;
+                li.className = `playlist-item p-3 rounded-lg flex items-center gap-3 ${index === currentTrack ? 'bg-indigo-600' : 'bg-white/10 hover:bg-white/20'}`;
+                
+                // Şarkı numarası
+                const numberSpan = document.createElement('span');
+                numberSpan.className = 'w-8 h-8 flex items-center justify-center rounded-full bg-white/10';
+                numberSpan.textContent = index + 1;
+                li.appendChild(numberSpan);
+
+                // Şarkı adı
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'flex-1';
+                nameSpan.textContent = song.name;
+                li.appendChild(nameSpan);
+
+                // Oynat butonu
+                const playButton = document.createElement('button');
+                playButton.className = 'w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20';
+                playButton.innerHTML = '<i class="fas fa-play"></i>';
+                li.appendChild(playButton);
+
                 li.onclick = () => playSong(index);
                 playlist.appendChild(li);
             });
@@ -182,14 +230,22 @@
         });
 
         socket.on('error', (message) => {
-            alert(message);
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded-lg shadow-lg';
+            errorDiv.textContent = message;
+            document.body.appendChild(errorDiv);
+            setTimeout(() => errorDiv.remove(), 3000);
         });
 
         // Link kopyalama fonksiyonu ekleyelim
         function copyLink() {
             const roomLink = `${window.location.origin}?room=${roomId}`;
             navigator.clipboard.writeText(roomLink).then(() => {
-                alert('Link kopyalandı!');
+                const successDiv = document.createElement('div');
+                successDiv.className = 'fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg';
+                successDiv.textContent = 'Link kopyalandı!';
+                document.body.appendChild(successDiv);
+                setTimeout(() => successDiv.remove(), 3000);
             }).catch(err => {
                 console.error('Link kopyalanamadı:', err);
             });
