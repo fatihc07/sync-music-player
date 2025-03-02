@@ -220,12 +220,15 @@ io.on('connection', (socket) => {
                 const elapsedTime = (Date.now() - room.lastSyncTime) / 1000;
                 const currentTime = room.currentTime + elapsedTime;
                 
+                // Yeni kullanıcıya daha detaylı senkronizasyon bilgisi gönder
                 socket.emit('syncState', {
                     currentTime: currentTime,
                     isPlaying: room.isPlaying,
                     currentTrack: room.currentTrack,
                     serverTime: Date.now()
                 });
+                
+                console.log(`Yeni kullanıcı ${username} odaya katıldı, çalan şarkı senkronize ediliyor: ${currentTime.toFixed(2)}s, şarkı: ${room.currentTrack}`);
             } else {
                 socket.emit('syncState', {
                     currentTime: room.currentTime,
@@ -233,6 +236,8 @@ io.on('connection', (socket) => {
                     currentTrack: room.currentTrack,
                     serverTime: Date.now()
                 });
+                
+                console.log(`Yeni kullanıcı ${username} odaya katıldı, şarkı çalmıyor`);
             }
             
             // Yeni kullanıcı katıldı bildirimi
