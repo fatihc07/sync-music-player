@@ -128,6 +128,38 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Şarkı sırasını değiştirmek için yeni event handler
+    socket.on('reorderPlaylist', ({ roomId, oldIndex, newIndex }) => {
+        const room = rooms.get(roomId);
+        if (room && room.songs.length > 1) {
+            // Şarkıyı eski konumundan çıkar ve yeni konuma ekle
+            const [movedSong] = room.songs.splice(oldIndex, 1);
+            room.songs.splice(newIndex, 0, movedSong);
+            
+            // Eğer çalan şarkı taşındıysa, currentTrack'i güncelle
+            if (room.currentTrack === oldIndex) {
+                room.currentTrack = newIndex;
+            } 
+            // Eğer çalan şarkı ile taşınan şarkı arasında bir değişiklik olduysa
+            else if (oldIndex < room.currentTrack && newIndex >= room.currentTrack) {
+                room.currentTrack--;
+            } else if (oldIndex > room.currentTrack && newIndex <= room.currentTrack) {
+                room.currentTrack++;
+            }
+            
+            // Güncellenmiş çalma listesini tüm kullanıcılara gönder
+            io.to(roomId).emit('updatePlaylist', room.songs);
+            io.to(roomId).emit('currentTrackChanged', room.currentTrack);
+            
+            // Şarkı sırası değiştirildi bildirimi
+            const username = room.users.get(socket.id) || 'Bilinmeyen Kullanıcı';
+            io.to(roomId).emit('playlistReordered', { 
+                username: username,
+                songName: movedSong.name
+            });
+        }
+    });
+
     socket.on('disconnect', () => {
         rooms.forEach((room, roomId) => {
             if (room.users.has(socket.id)) {

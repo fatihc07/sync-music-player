@@ -8,6 +8,7 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/aurora.js/0.4.2/aurora.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/flac.js/0.3.0/flac.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <style>
         .gradient-bg {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -25,6 +26,19 @@
         }
         .animate-pulse-slow {
             animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        .sortable-ghost {
+            opacity: 0.4;
+            background: rgba(255, 255, 255, 0.2) !important;
+        }
+        .sortable-drag {
+            background: rgba(102, 126, 234, 0.8) !important;
+        }
+        .sortable-handle {
+            cursor: grab;
+        }
+        .sortable-handle:active {
+            cursor: grabbing;
         }
     </style>
 </head>
@@ -107,6 +121,9 @@
                         Herkes şarkı ekleyebilir
                     </span>
                 </h3>
+                <p class="text-sm text-white/70 mb-3">
+                    <i class="fas fa-arrows-alt mr-1"></i> Şarkıları sürükleyip bırakarak sıralamayı değiştirebilirsiniz
+                </p>
                 <ul id="playlist" class="space-y-2"></ul>
             </div>
         </div>
@@ -292,6 +309,13 @@
                 li.className = `playlist-item p-3 rounded-lg flex items-center gap-3 ${
                     index === currentTrack ? 'bg-indigo-600' : 'bg-white/10 hover:bg-white/20'
                 }`;
+                li.dataset.index = index;
+                
+                // Sürükle-bırak için tutamaç ekleyelim
+                const dragHandle = document.createElement('span');
+                dragHandle.className = 'sortable-handle w-8 h-8 flex items-center justify-center rounded-full bg-white/10';
+                dragHandle.innerHTML = '<i class="fas fa-grip-vertical"></i>';
+                li.appendChild(dragHandle);
                 
                 // Şarkı numarası
                 const numberSpan = document.createElement('span');
@@ -327,10 +351,64 @@
                     '<i class="fas fa-play"></i>';
                 li.appendChild(playButton);
 
-                li.onclick = () => playSong(index);
+                // Tıklama olayını sadece oynat butonuna ve şarkı adına ekleyelim
+                playButton.onclick = (e) => {
+                    e.stopPropagation();
+                    playSong(index);
+                };
+                nameContainer.onclick = (e) => {
+                    e.stopPropagation();
+                    playSong(index);
+                };
+                
                 playlist.appendChild(li);
             });
+            
+            // Sortable.js ile sürükle-bırak özelliğini etkinleştirelim
+            if (currentPlaylist.length > 1) {
+                initSortable();
+            }
         }
+        
+        // Sortable.js ile sürükle-bırak özelliğini başlatan fonksiyon
+        function initSortable() {
+            if (window.playlistSortable) {
+                window.playlistSortable.destroy();
+            }
+            
+            window.playlistSortable = new Sortable(playlist, {
+                animation: 150,
+                handle: '.sortable-handle',
+                ghostClass: 'sortable-ghost',
+                dragClass: 'sortable-drag',
+                onEnd: function(evt) {
+                    const oldIndex = evt.oldIndex;
+                    const newIndex = evt.newIndex;
+                    
+                    if (oldIndex !== newIndex) {
+                        // Server'a bildir
+                        socket.emit('reorderPlaylist', {
+                            roomId,
+                            oldIndex,
+                            newIndex
+                        });
+                    }
+                }
+            });
+        }
+        
+        // Çalan şarkı değiştiğinde UI'ı güncelle
+        socket.on('currentTrackChanged', (index) => {
+            currentTrack = index;
+            updatePlaylistUI();
+        });
+        
+        // Şarkı sırası değiştirildiğinde bildirim göster
+        socket.on('playlistReordered', (data) => {
+            if (data.username !== username) {
+                showSuccess(`${data.username} "${data.songName}" şarkısının sırasını değiştirdi`);
+            }
+        });
 
         // Kullanıcı listesini güncelleyen fonksiyon
         function updateUsersUI(users) {
