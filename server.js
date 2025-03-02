@@ -60,8 +60,19 @@ io.on('connection', (socket) => {
     socket.on('addSong', ({ roomId, song }) => {
         const room = rooms.get(roomId);
         if (room) {
+            // Şarkıya ekleyen kişi bilgisini ekleyelim
+            if (!song.addedBy) {
+                song.addedBy = room.users.get(socket.id) || 'Bilinmeyen Kullanıcı';
+            }
+            
             room.songs.push(song);
             io.to(roomId).emit('updatePlaylist', room.songs);
+            
+            // Yeni şarkı eklendi bildirimi
+            io.to(roomId).emit('songAdded', { 
+                songName: song.name, 
+                addedBy: song.addedBy 
+            });
             
             // Eğer ilk şarkıysa veya hiçbir şarkı çalmıyorsa otomatik başlat
             if (room.songs.length === 1 || !room.isPlaying) {

@@ -190,12 +190,12 @@
                 reader.onload = function(e) {
                     const song = {
                         name: file.name,
-                        data: e.target.result
+                        data: e.target.result,
+                        addedBy: username
                     };
                     socket.emit('addSong', { roomId, song });
                     filesAdded++;
 
-                    // Tüm dosyalar eklendiğinde bildir
                     if (filesAdded === totalFiles) {
                         showSuccess(`${totalFiles} şarkı başarıyla eklendi`);
                     }
@@ -288,11 +288,24 @@
                 numberSpan.textContent = index + 1;
                 li.appendChild(numberSpan);
 
-                // Şarkı adı
-                const nameSpan = document.createElement('span');
-                nameSpan.className = 'flex-1';
+                // Şarkı adı ve ekleyen kişi
+                const nameContainer = document.createElement('div');
+                nameContainer.className = 'flex-1';
+                
+                const nameSpan = document.createElement('div');
+                nameSpan.className = 'font-medium';
                 nameSpan.textContent = song.name;
-                li.appendChild(nameSpan);
+                nameContainer.appendChild(nameSpan);
+                
+                // Ekleyen kişi bilgisi
+                if (song.addedBy) {
+                    const addedBySpan = document.createElement('div');
+                    addedBySpan.className = 'text-xs text-white/70 mt-1 flex items-center gap-1';
+                    addedBySpan.innerHTML = `<i class="fas fa-user-plus"></i> <span>Ekleyen: ${song.addedBy}</span>`;
+                    nameContainer.appendChild(addedBySpan);
+                }
+                
+                li.appendChild(nameContainer);
 
                 // Oynat/Duraklat butonu
                 const playButton = document.createElement('button');
@@ -348,6 +361,12 @@
 
         socket.on('userLeft', (user) => {
             showSuccess(`${user.name} odadan ayrıldı`);
+        });
+
+        socket.on('songAdded', (data) => {
+            if (data.addedBy !== username) {
+                showSuccess(`${data.addedBy} "${data.songName}" şarkısını ekledi`);
+            }
         });
 
         // Hata ve başarı mesajları için yardımcı fonksiyonlar
