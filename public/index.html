@@ -290,19 +290,25 @@
         .playlist-item {
             display: flex;
             align-items: center;
-            padding: 10px 0;
-            border-radius: 4px;
+            padding: 12px 15px;
+            border-radius: 8px;
             cursor: pointer;
-            transition: background-color 0.2s;
-            margin-bottom: 5px;
+            transition: all 0.2s;
+            margin-bottom: 10px;
+            background-color: #fff;
+            border: 1px solid #eaeaea;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
         }
 
         .playlist-item:hover {
-            background-color: #f5f5f5;
+            background-color: #f9f9f9;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            transform: translateY(-2px);
         }
 
         .playlist-item.active {
             background-color: #f0f0f0;
+            border-left: 3px solid #4f46e5;
         }
 
         .playlist-item-number {
@@ -314,6 +320,7 @@
 
         .playlist-item.active .playlist-item-number {
             color: #4f46e5;
+            font-weight: bold;
         }
 
         .playlist-item-info {
@@ -339,63 +346,77 @@
         }
 
         .room-info {
-            background-color: #f5f5f5;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 25px;
+            border: 1px solid #eaeaea;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
         }
 
         .room-title {
             font-size: 18px;
             font-weight: bold;
             color: #333;
-            margin-bottom: 10px;
+            margin-bottom: 15px;
         }
 
         .room-users {
             display: flex;
             flex-wrap: wrap;
             gap: 10px;
-            margin-bottom: 10px;
+            margin-bottom: 15px;
         }
 
         .room-user {
-            background-color: #eaeaea;
-            padding: 5px 10px;
-            border-radius: 15px;
+            background-color: #f5f5f5;
+            padding: 8px 12px;
+            border-radius: 20px;
             font-size: 14px;
             display: flex;
             align-items: center;
             gap: 5px;
             color: #333;
+            border: 1px solid #eaeaea;
+            transition: all 0.2s;
+        }
+
+        .room-user:hover {
+            background-color: #eaeaea;
+            transform: translateY(-2px);
         }
 
         .room-actions {
             display: flex;
             gap: 10px;
-            margin-top: 10px;
+            margin-top: 15px;
         }
 
         .room-action {
             background-color: #4f46e5;
             border: none;
             color: #fff;
-            padding: 8px 15px;
-            border-radius: 4px;
+            padding: 10px 18px;
+            border-radius: 8px;
             cursor: pointer;
             transition: all 0.2s;
+            box-shadow: 0 2px 5px rgba(79, 70, 229, 0.3);
         }
 
         .room-action:hover {
             background-color: #4338ca;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(79, 70, 229, 0.4);
         }
 
         .room-action.danger {
             background-color: #ef4444;
+            box-shadow: 0 2px 5px rgba(239, 68, 68, 0.3);
         }
 
         .room-action.danger:hover {
             background-color: #dc2626;
+            box-shadow: 0 4px 10px rgba(239, 68, 68, 0.4);
         }
 
         .upload-progress-container {
@@ -800,9 +821,10 @@
             max-width: 400px;
             margin: 100px auto;
             padding: 30px;
-            background-color: #181818;
-            border-radius: 8px;
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+            background-color: #fff;
+            border-radius: 12px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+            border: 1px solid #eaeaea;
         }
 
         .login-title {
@@ -810,6 +832,7 @@
             font-weight: bold;
             margin-bottom: 20px;
             text-align: center;
+            color: #333;
         }
 
         .form-group {
@@ -820,39 +843,44 @@
             display: block;
             margin-bottom: 8px;
             font-size: 14px;
-            color: #b3b3b3;
+            color: #666;
         }
 
         .form-input {
             width: 100%;
             padding: 12px;
-            background-color: #333;
-            border: none;
-            border-radius: 4px;
-            color: #fff;
+            background-color: #f5f5f7;
+            border: 1px solid #eaeaea;
+            border-radius: 8px;
+            color: #333;
             font-size: 16px;
+            transition: all 0.2s;
         }
 
         .form-input:focus {
             outline: none;
-            box-shadow: 0 0 0 2px #1DB954;
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
         }
 
         .form-button {
             width: 100%;
             padding: 12px;
-            background-color: #1DB954;
+            background-color: #4f46e5;
             border: none;
-            border-radius: 4px;
+            border-radius: 8px;
             color: #fff;
             font-size: 16px;
             font-weight: bold;
             cursor: pointer;
-            transition: background-color 0.2s;
+            transition: all 0.2s;
+            box-shadow: 0 2px 5px rgba(79, 70, 229, 0.3);
         }
 
         .form-button:hover {
-            background-color: #1ed760;
+            background-color: #4338ca;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(79, 70, 229, 0.4);
         }
 
         /* Hide elements initially */
