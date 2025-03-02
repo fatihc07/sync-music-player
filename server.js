@@ -347,17 +347,24 @@ io.on('connection', (socket) => {
             room.lastSyncTime = Date.now();
             
             // Şarkı değiştiğinde tüm kullanıcılara bildir
+            // 5 saniyelik bir gecikme ekleyelim
+            const startDelay = 5000; // 5 saniye gecikme
+            
             io.to(roomId).emit('playSong', { 
                 song: room.songs[index], 
                 index: index,
                 autoplay: true,
-                serverTime: Date.now()
+                serverTime: Date.now(),
+                startDelay: startDelay // Gecikme süresini ekle
             });
             
-            console.log(`Oda ${roomId}: ${index}. şarkı çalınıyor: ${room.songs[index].name}`);
+            console.log(`Oda ${roomId}: ${index}. şarkı çalınıyor: ${room.songs[index].name} (5 sn gecikme ile)`);
             
             // Oda için senkronizasyon interval'ini başlat
-            startRoomSyncInterval(roomId);
+            // Gecikme süresinden sonra başlat
+            setTimeout(() => {
+                startRoomSyncInterval(roomId);
+            }, startDelay);
             
             // Odalar değiştiğinde kaydet
             saveRoomsToFile();
