@@ -152,6 +152,41 @@
         #playlist > li:last-child {
             margin-bottom: 0;
         }
+        
+        /* Uzun şarkı isimleri için ek stiller */
+        .song-name-container {
+            max-width: 100%;
+            overflow: hidden;
+        }
+        
+        .song-name {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+            display: block;
+        }
+        
+        /* Çalma listesi öğelerinin genişliğini artır */
+        .playlist-item {
+            min-width: 0; /* Flexbox içinde taşmayı önlemek için */
+        }
+        
+        /* Şu an çalan şarkı bilgisi için taşma kontrolü */
+        #currentSongName {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+            padding: 0 8px;
+        }
+        
+        /* Mobil görünüm için ek düzenlemeler */
+        @media (max-width: 640px) {
+            .playlist-item .song-info {
+                max-width: 180px;
+            }
+        }
     </style>
 </head>
 <body class="gradient-bg min-h-screen text-white">
@@ -232,7 +267,7 @@
                             </div>
                             
                             <!-- Şu an çalan şarkı adı -->
-                            <div id="nowPlayingInfo" class="text-center">
+                            <div id="nowPlayingInfo" class="text-center w-full">
                                 <p class="text-sm text-white/70">Şu an çalıyor:</p>
                                 <p id="currentSongName" class="font-bold truncate max-w-full">Henüz bir şarkı seçilmedi</p>
                             </div>
@@ -376,7 +411,8 @@
                 const sessionData = {
                     roomId,
                     username,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    volume: volumeControl.value // Ses seviyesini de kaydet
                 };
                 localStorage.setItem('musicRoomSession', JSON.stringify(sessionData));
                 console.log('Oturum bilgisi kaydedildi:', sessionData);
@@ -390,13 +426,19 @@
                 try {
                     const sessionData = JSON.parse(savedSession);
                     
-                    // Oturum 24 saatten eski mi kontrol et
+                    // Oturum 7 günden eski mi kontrol et (1 hafta)
                     const sessionAge = Date.now() - sessionData.timestamp;
-                    const oneDayInMs = 24 * 60 * 60 * 1000;
+                    const oneWeekInMs = 7 * 24 * 60 * 60 * 1000;
                     
-                    if (sessionAge < oneDayInMs && sessionData.roomId === roomId) {
+                    if (sessionAge < oneWeekInMs && sessionData.roomId === roomId) {
                         // Kullanıcı adını giriş alanına yerleştir
                         document.getElementById('username').value = sessionData.username;
+                        
+                        // Kaydedilmiş ses seviyesini ayarla
+                        if (sessionData.volume) {
+                            volumeControl.value = sessionData.volume;
+                            audioPlayer.volume = sessionData.volume / 100;
+                        }
                     }
                 } catch (error) {
                     console.error('Oturum bilgisi okunamadı:', error);
@@ -412,11 +454,11 @@
                 try {
                     const sessionData = JSON.parse(savedSession);
                     
-                    // Oturum 24 saatten eski mi kontrol et
+                    // Oturum 7 günden eski mi kontrol et
                     const sessionAge = Date.now() - sessionData.timestamp;
-                    const oneDayInMs = 24 * 60 * 60 * 1000;
+                    const oneWeekInMs = 7 * 24 * 60 * 60 * 1000;
                     
-                    if (sessionAge < oneDayInMs) {
+                    if (sessionAge < oneWeekInMs) {
                         // URL'deki oda ID'si ile kaydedilen oda ID'si aynı mı kontrol et
                         if (roomId && roomId === sessionData.roomId) {
                             username = sessionData.username;
@@ -429,6 +471,12 @@
                             
                             // Odaya katıl
                             socket.emit('joinRoom', { roomId, username });
+                            
+                            // Kaydedilmiş ses seviyesini ayarla
+                            if (sessionData.volume) {
+                                volumeControl.value = sessionData.volume;
+                                audioPlayer.volume = sessionData.volume / 100;
+                            }
                             
                             showSuccess('Oturumunuz geri yüklendi');
                             console.log('Oturum geri yüklendi:', sessionData);
@@ -781,33 +829,45 @@
                 
                 // Sürükle-bırak için tutamaç ekleyelim
                 const dragHandle = document.createElement('span');
-                dragHandle.className = 'sortable-handle w-6 h-6 flex items-center justify-center rounded-full bg-white/10';
+                dragHandle.className = 'sortable-handle w-6 h-6 flex items-center justify-center rounded-full bg-white/10 shrink-0';
                 dragHandle.innerHTML = '<i class="fas fa-grip-vertical"></i>';
                 li.appendChild(dragHandle);
                 
                 // Şarkı numarası
                 const numberSpan = document.createElement('span');
-                numberSpan.className = 'w-6 h-6 flex items-center justify-center rounded-full bg-white/10 text-xs';
+                numberSpan.className = 'w-6 h-6 flex items-center justify-center rounded-full bg-white/10 text-xs shrink-0';
                 numberSpan.textContent = index + 1;
                 li.appendChild(numberSpan);
 
                 // Şarkı adı ve ekleyen kişi
                 const nameContainer = document.createElement('div');
-                nameContainer.className = 'flex-1 truncate';
+                nameContainer.className = 'flex-1 min-w-0'; // min-width: 0 ekleyerek taşmayı önlüyoruz
                 
                 const nameSpan = document.createElement('div');
-                nameSpan.className = 'font-medium flex items-center truncate';
+                nameSpan.className = 'font-medium flex items-center';
                 nameSpan.title = song.name; // Tam adı tooltip olarak göster
                 
                 // Şarkı adını göster ve ekleme zamanını ekle
                 const songName = song.name.replace(/\.[^/.]+$/, ""); // Uzantıyı kaldır
-                nameSpan.textContent = songName;
+                
+                // Şarkı adı için container
+                const songNameContainer = document.createElement('div');
+                songNameContainer.className = 'song-name-container';
+                
+                const songNameElement = document.createElement('span');
+                songNameElement.className = 'song-name';
+                songNameElement.textContent = songName;
+                songNameContainer.appendChild(songNameElement);
+                nameSpan.appendChild(songNameContainer);
                 
                 // Ekleme zamanını göster
                 if (song.addedAt) {
                     const addedDate = new Date(song.addedAt);
                     const timeString = addedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                    nameSpan.innerHTML += ` <span class="text-xs text-white/50">${timeString}</span>`;
+                    const timeElement = document.createElement('span');
+                    timeElement.className = 'text-xs text-white/50 ml-2 shrink-0';
+                    timeElement.textContent = timeString;
+                    nameSpan.appendChild(timeElement);
                 }
                 
                 nameContainer.appendChild(nameSpan);
@@ -1119,6 +1179,7 @@
                 // Şarkı adını göster (uzantıyı kaldır)
                 const songName = currentSong.name.replace(/\.[^/.]+$/, "");
                 currentSongName.textContent = songName;
+                currentSongName.title = songName; // Tooltip olarak tam adı göster
                 
                 // Varsayılan kapak resmini göster
                 albumCover.src = "https://cdn-icons-png.flaticon.com/512/3844/3844724.png";
@@ -1142,6 +1203,7 @@
                 }
             } else {
                 currentSongName.textContent = "Henüz bir şarkı seçilmedi";
+                currentSongName.title = ""; // Tooltip'i temizle
                 albumCover.src = "https://cdn-icons-png.flaticon.com/512/3844/3844724.png";
                 document.getElementById('albumCoverContainer').classList.remove('animate-pulse-slow');
             }
@@ -1150,11 +1212,30 @@
         // Ses seviyesi kontrolü
         volumeControl.addEventListener('input', function() {
             audioPlayer.volume = this.value / 100;
+            // Ses seviyesi değiştiğinde oturum bilgisini güncelle
+            saveSession();
         });
 
         // Sayfa yüklendiğinde ses seviyesini ayarla
         window.addEventListener('DOMContentLoaded', function() {
             audioPlayer.volume = volumeControl.value / 100;
+        });
+
+        // Bağlantı durumunu izle
+        socket.on('connect', () => {
+            console.log('Sunucuya bağlandı');
+            // Bağlantı kurulduğunda oturumu geri yükle
+            restoreSession();
+        });
+        
+        socket.on('disconnect', () => {
+            console.log('Sunucu bağlantısı kesildi');
+            showError('Sunucu bağlantısı kesildi. Yeniden bağlanılıyor...');
+        });
+        
+        socket.on('connect_error', (error) => {
+            console.error('Bağlantı hatası:', error);
+            showError('Sunucuya bağlanılamadı. Lütfen internet bağlantınızı kontrol edin.');
         });
     </script>
 </body>

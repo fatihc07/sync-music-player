@@ -77,18 +77,35 @@ setInterval(() => {
 app.use(express.static('public'));
 app.use('/songs', express.static(songsDir));
 
-// Sunucu başlatıldığında songs klasörünü temizle
-console.log('Başlangıçta şarkı klasörü temizleniyor...');
+// Sunucu başlatıldığında songs klasörünü temizleme işlemini kaldıralım
+// Böylece şarkılar sunucu yeniden başlatılsa bile kalacak
+console.log('Sunucu başlatıldı, şarkı klasörü korunuyor...');
+
+// Eski şarkıları temizleme işlemini kaldıralım ve sadece çok eski dosyaları temizleyelim
 try {
     if (fs.existsSync(songsDir)) {
         const files = fs.readdirSync(songsDir);
+        const now = Date.now();
+        let deletedCount = 0;
+        
         for (const file of files) {
-            fs.unlinkSync(path.join(songsDir, file));
+            const filePath = path.join(songsDir, file);
+            const stats = fs.statSync(filePath);
+            const fileAge = now - stats.mtimeMs;
+            
+            // 7 günden eski dosyaları sil (1 hafta)
+            if (fileAge > 7 * 24 * 60 * 60 * 1000) {
+                fs.unlinkSync(filePath);
+                deletedCount++;
+            }
         }
-        console.log(`${files.length} şarkı dosyası temizlendi`);
+        
+        if (deletedCount > 0) {
+            console.log(`${deletedCount} adet 7 günden eski şarkı dosyası temizlendi`);
+        }
     }
 } catch (err) {
-    console.error('Başlangıç temizleme hatası:', err);
+    console.error('Eski şarkı temizleme hatası:', err);
 }
 
 app.get('/', (req, res) => {
@@ -170,9 +187,13 @@ io.on('connection', (socket) => {
             users: new Map(),
             currentTrack: 0,
             isPlaying: false,
-            currentTime: 0
+            currentTime: 0,
+            lastSyncTime: Date.now()
         });
         socket.emit('roomCreated', roomId);
+        
+        // Yeni oda oluşturulduğunda kaydet
+        saveRoomsToFile();
     });
 
     socket.on('joinRoom', ({ roomId, username }) => {
@@ -268,6 +289,9 @@ io.on('connection', (socket) => {
                 console.error('Şarkı kaydetme hatası:', error);
                 socket.emit('error', 'Şarkı kaydedilemedi: ' + error.message);
             }
+            
+            // Şarkı eklendiğinde odaları kaydet
+            saveRoomsToFile();
         }
     });
 
@@ -344,6 +368,9 @@ io.on('connection', (socket) => {
                 username: username,
                 songName: movedSong.name
             });
+            
+            // Çalma listesi değiştiğinde odaları kaydet
+            saveRoomsToFile();
         }
     });
     
@@ -399,6 +426,9 @@ io.on('connection', (socket) => {
             
             // Odayı sil
             rooms.delete(roomId);
+            
+            // Odalar değiştiğinde kaydet
+            saveRoomsToFile();
         }
     });
 
@@ -442,6 +472,87 @@ io.on('connection', (socket) => {
             }
         });
     });
+});
+
+// Odaları ve şarkıları kalıcı hale getirmek için dosya sistemi kullanacağız
+const roomsFilePath = path.join(__dirname, 'rooms.json');
+
+// Odaları dosyadan yükle (eğer varsa)
+function loadRoomsFromFile() {
+    try {
+        if (fs.existsSync(roomsFilePath)) {
+            const roomsData = JSON.parse(fs.readFileSync(roomsFilePath, 'utf8'));
+            
+            // Oda verilerini Map yapısına dönüştür
+            roomsData.forEach(roomData => {
+                const { id, songs, currentTrack, isPlaying, currentTime } = roomData;
+                
+                // Şarkı dosyalarının varlığını kontrol et
+                const validSongs = songs.filter(song => {
+                    const songFileName = song.data.split('/').pop();
+                    const songPath = path.join(songsDir, songFileName);
+                    return fs.existsSync(songPath);
+                });
+                
+                if (validSongs.length > 0) {
+                    rooms.set(id, {
+                        songs: validSongs,
+                        users: new Map(),
+                        currentTrack: Math.min(currentTrack, validSongs.length - 1),
+                        isPlaying: false, // Başlangıçta çalmıyor olarak ayarla
+                        currentTime: currentTime || 0,
+                        lastSyncTime: Date.now()
+                    });
+                    console.log(`Oda yüklendi: ${id}, ${validSongs.length} şarkı`);
+                }
+            });
+            
+            console.log(`Toplam ${rooms.size} oda yüklendi`);
+        }
+    } catch (err) {
+        console.error('Odaları yükleme hatası:', err);
+    }
+}
+
+// Odaları dosyaya kaydet
+function saveRoomsToFile() {
+    try {
+        const roomsData = [];
+        
+        rooms.forEach((room, id) => {
+            roomsData.push({
+                id,
+                songs: room.songs,
+                currentTrack: room.currentTrack,
+                isPlaying: room.isPlaying,
+                currentTime: room.currentTime
+            });
+        });
+        
+        fs.writeFileSync(roomsFilePath, JSON.stringify(roomsData, null, 2));
+        console.log(`${rooms.size} oda kaydedildi`);
+    } catch (err) {
+        console.error('Odaları kaydetme hatası:', err);
+    }
+}
+
+// Başlangıçta odaları yükle
+loadRoomsFromFile();
+
+// Periyodik olarak odaları kaydet (her 5 dakikada bir)
+setInterval(saveRoomsToFile, 5 * 60 * 1000);
+
+// Sunucu kapanırken odaları kaydet
+process.on('SIGINT', () => {
+    console.log('Sunucu kapatılıyor, odalar kaydediliyor...');
+    saveRoomsToFile();
+    process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+    console.log('Sunucu kapatılıyor, odalar kaydediliyor...');
+    saveRoomsToFile();
+    process.exit(0);
 });
 
 const PORT = process.env.PORT || 8080;
