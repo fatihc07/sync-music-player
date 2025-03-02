@@ -521,6 +521,10 @@
                 document.getElementById('createJoinSection').style.display = 'none';
                 document.getElementById('playerSection').style.display = 'block';
                 document.getElementById('userSection').style.display = 'block'; // Kullanıcılar bölümünü göster
+                
+                // Kullanıcı tarafından başlatıldı olarak işaretle
+                userInitiatedPlay = true;
+                
                 socket.emit('joinRoom', { roomId, username });
                 
                 // Oturum bilgisini kaydet
@@ -890,9 +894,13 @@
             }
             
             // Şarkı pozisyonunu ayarla
-                audioPlayer.currentTime = state.currentTime;
+            audioPlayer.currentTime = state.currentTime;
             
-            if (state.isPlaying && userInitiatedPlay) {
+            // Odaya yeni giren kullanıcı için, eğer şarkı çalıyorsa otomatik başlat
+            if (state.isPlaying) {
+                // Kullanıcı tarafından başlatıldı olarak işaretle
+                userInitiatedPlay = true;
+                
                 // Şarkıyı çal
                 const playPromise = audioPlayer.play();
                 if (playPromise !== undefined) {
@@ -902,6 +910,7 @@
                         // Otomatik çalma engellendiyse kullanıcıya bildir
                         if (error.name === 'NotAllowedError') {
                             showNotification('Otomatik çalma engellendi. Lütfen çalma düğmesine tıklayın.', 'info');
+                            userInitiatedPlay = false;
                         } else {
                             showError('Şarkı çalınırken hata: ' + error.message);
                         }
@@ -913,17 +922,15 @@
                 
                 // Son senkronizasyon zamanını kaydet
                 lastSyncTime = Date.now();
+                
+                // Kullanıcıya bilgi ver
+                showNotification('Odada çalan şarkıya senkronize olundu', 'success');
             } else {
                 // Şarkıyı duraklat
                 audioPlayer.pause();
                 
                 // Senkronizasyon interval'ini durdur
                 stopSyncInterval();
-                
-                // Kullanıcıya bilgi ver
-                if (isPlaying) {
-                    showNotification('Şarkı hazır. Çalmak için play düğmesine basın.', 'info');
-                }
             }
             
             // UI'ı güncelle
