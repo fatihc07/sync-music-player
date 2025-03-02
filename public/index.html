@@ -204,6 +204,9 @@
         // Bağlantı durumunu izle
         socket.on('connect', () => {
             console.log('Socket.IO bağlantısı kuruldu');
+            
+            // Bağlantı kurulduğunda, eğer oturum bilgisi varsa otomatik giriş yap
+            restoreSession();
         });
         
         socket.on('connect_error', (error) => {
@@ -243,6 +246,83 @@
             document.getElementById('roomLinkSection').style.display = 'block';
             document.getElementById('createJoinSection').style.display = 'none';
             document.getElementById('loginSection').style.display = 'block';
+            
+            // Oturum bilgisini kontrol et
+            checkSavedSession();
+        }
+        
+        // Oturum bilgisini localStorage'a kaydet
+        function saveSession() {
+            if (roomId && username) {
+                const sessionData = {
+                    roomId,
+                    username,
+                    timestamp: Date.now()
+                };
+                localStorage.setItem('musicRoomSession', JSON.stringify(sessionData));
+                console.log('Oturum bilgisi kaydedildi:', sessionData);
+            }
+        }
+        
+        // Kaydedilmiş oturum bilgisini kontrol et
+        function checkSavedSession() {
+            const savedSession = localStorage.getItem('musicRoomSession');
+            if (savedSession) {
+                try {
+                    const sessionData = JSON.parse(savedSession);
+                    
+                    // Oturum 24 saatten eski mi kontrol et
+                    const sessionAge = Date.now() - sessionData.timestamp;
+                    const oneDayInMs = 24 * 60 * 60 * 1000;
+                    
+                    if (sessionAge < oneDayInMs && sessionData.roomId === roomId) {
+                        // Kullanıcı adını giriş alanına yerleştir
+                        document.getElementById('username').value = sessionData.username;
+                    }
+                } catch (error) {
+                    console.error('Oturum bilgisi okunamadı:', error);
+                    localStorage.removeItem('musicRoomSession');
+                }
+            }
+        }
+        
+        // Sayfa yenilendiğinde oturumu geri yükle
+        function restoreSession() {
+            const savedSession = localStorage.getItem('musicRoomSession');
+            if (savedSession && socket.connected) {
+                try {
+                    const sessionData = JSON.parse(savedSession);
+                    
+                    // Oturum 24 saatten eski mi kontrol et
+                    const sessionAge = Date.now() - sessionData.timestamp;
+                    const oneDayInMs = 24 * 60 * 60 * 1000;
+                    
+                    if (sessionAge < oneDayInMs) {
+                        // URL'deki oda ID'si ile kaydedilen oda ID'si aynı mı kontrol et
+                        if (roomId && roomId === sessionData.roomId) {
+                            username = sessionData.username;
+                            
+                            // Otomatik giriş yap
+                            document.getElementById('loginSection').style.display = 'none';
+                            document.getElementById('createJoinSection').style.display = 'none';
+                            document.getElementById('playerSection').style.display = 'block';
+                            document.getElementById('userSection').style.display = 'block';
+                            
+                            // Odaya katıl
+                            socket.emit('joinRoom', { roomId, username });
+                            
+                            showSuccess('Oturumunuz geri yüklendi');
+                            console.log('Oturum geri yüklendi:', sessionData);
+                        }
+                    } else {
+                        // Oturum süresi dolmuş, localStorage'dan kaldır
+                        localStorage.removeItem('musicRoomSession');
+                    }
+                } catch (error) {
+                    console.error('Oturum geri yüklenirken hata:', error);
+                    localStorage.removeItem('musicRoomSession');
+                }
+            }
         }
 
         function createRoom() {
@@ -257,6 +337,9 @@
             document.getElementById('roomLinkText').textContent = roomLink;
             document.getElementById('roomLinkSection').style.display = 'block';
             document.getElementById('loginSection').style.display = 'block';
+            
+            // URL'yi güncelle (sayfa yenilenmeden)
+            window.history.pushState({}, '', `?room=${roomId}`);
         });
 
         function login() {
@@ -267,6 +350,9 @@
                 document.getElementById('playerSection').style.display = 'block';
                 document.getElementById('userSection').style.display = 'block'; // Kullanıcılar bölümünü göster
                 socket.emit('joinRoom', { roomId, username });
+                
+                // Oturum bilgisini kaydet
+                saveSession();
             }
         }
 
@@ -708,6 +794,13 @@
                 isPlaying = false;
                 updatePlaylistUI();
                 showSuccess('Çalma listesi tamamlandı');
+            }
+        });
+
+        // Sayfa kapatılırken veya yenilenirken oturum bilgisini güncelle
+        window.addEventListener('beforeunload', function() {
+            if (roomId && username) {
+                saveSession();
             }
         });
     </script>
