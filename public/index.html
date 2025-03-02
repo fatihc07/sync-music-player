@@ -40,6 +40,25 @@
         .sortable-handle:active {
             cursor: grabbing;
         }
+        
+        /* Responsive düzen için ek stiller */
+        @media (max-width: 768px) {
+            .playlist-container {
+                margin-top: 1rem;
+            }
+        }
+        
+        /* Çalma listesi için sabit yükseklik */
+        .playlist-container {
+            height: calc(100% - 2rem);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .playlist-scroll {
+            flex-grow: 1;
+            overflow-y: auto;
+        }
     </style>
 </head>
 <body class="gradient-bg min-h-screen text-white">
@@ -67,7 +86,7 @@
         </div>
 
         <!-- Kullanıcılar Bölümü -->
-        <div class="glass-effect rounded-xl p-6 mb-6">
+        <div id="userSection" class="glass-effect rounded-xl p-6 mb-6">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-xl font-bold flex items-center gap-2">
                     <i class="fas fa-users"></i>
@@ -83,48 +102,57 @@
 
         <!-- Müzik Çalar Bölümü -->
         <div id="playerSection" style="display: none;" class="space-y-6">
-            <!-- Kontroller -->
-            <div class="glass-effect rounded-xl p-6">
-                <div class="flex flex-col md:flex-row items-center gap-4">
-                    <div class="flex gap-2 flex-1">
-                        <button onclick="playMusic()" class="bg-green-600 hover:bg-green-700 text-white font-bold p-3 rounded-full transition duration-300">
-                            <i class="fas fa-play"></i>
-                        </button>
-                        <button onclick="pauseMusic()" class="bg-red-600 hover:bg-red-700 text-white font-bold p-3 rounded-full transition duration-300">
-                            <i class="fas fa-pause"></i>
-                        </button>
-                    </div>
-                    <div class="flex-1">
-                        <label class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg cursor-pointer transition duration-300 flex items-center justify-center gap-2">
-                            <i class="fas fa-music mr-2"></i>
-                            Şarkı Ekle
-                            <input type="file" id="localFile" accept=".mp3,.flac,.wav,audio/mp3,audio/flac,audio/wav" onchange="addLocalFile()" multiple class="hidden">
-                        </label>
-                        <p class="text-xs text-white/70 mt-2 text-center">Desteklenen formatlar: MP3, FLAC, WAV</p>
-                        <p class="text-xs text-white/70 mt-1 text-center">Eklediğiniz şarkılar odadaki herkesle paylaşılır</p>
+            <!-- İki sütunlu düzen oluşturalım -->
+            <div class="flex flex-col md:flex-row gap-6">
+                <!-- Sol sütun: Kontroller -->
+                <div class="md:w-1/2">
+                    <div class="glass-effect rounded-xl p-6">
+                        <div class="flex flex-col items-center gap-4">
+                            <div class="flex gap-2 w-full justify-center">
+                                <button onclick="playMusic()" class="bg-green-600 hover:bg-green-700 text-white font-bold p-3 rounded-full transition duration-300">
+                                    <i class="fas fa-play"></i>
+                                </button>
+                                <button onclick="pauseMusic()" class="bg-red-600 hover:bg-red-700 text-white font-bold p-3 rounded-full transition duration-300">
+                                    <i class="fas fa-pause"></i>
+                                </button>
+                            </div>
+                            <div class="w-full">
+                                <label class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg cursor-pointer transition duration-300 flex items-center justify-center gap-2 w-full">
+                                    <i class="fas fa-music mr-2"></i>
+                                    Şarkı Ekle
+                                    <input type="file" id="localFile" accept=".mp3,.flac,.wav,audio/mp3,audio/flac,audio/wav" onchange="addLocalFile()" multiple class="hidden">
+                                </label>
+                                <p class="text-xs text-white/70 mt-2 text-center">Desteklenen formatlar: MP3, FLAC, WAV</p>
+                                <p class="text-xs text-white/70 mt-1 text-center">Eklediğiniz şarkılar odadaki herkesle paylaşılır</p>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-4">
+                            <audio id="audioPlayer" class="w-full" controls></audio>
+                        </div>
                     </div>
                 </div>
                 
-                <div class="mt-4">
-                    <audio id="audioPlayer" class="w-full" controls></audio>
+                <!-- Sağ sütun: Çalma Listesi -->
+                <div class="md:w-1/2 playlist-container">
+                    <div class="glass-effect rounded-xl p-6 h-full flex flex-col">
+                        <h3 class="text-xl font-bold mb-4 flex items-center justify-between">
+                            <span class="flex items-center gap-2">
+                                <i class="fas fa-list"></i>
+                                Çalma Listesi
+                            </span>
+                            <span class="text-sm font-normal bg-white/10 px-3 py-1 rounded-lg">
+                                Herkes şarkı ekleyebilir
+                            </span>
+                        </h3>
+                        <p class="text-sm text-white/70 mb-3">
+                            <i class="fas fa-arrows-alt mr-1"></i> Şarkıları sürükleyip bırakarak sıralamayı değiştirebilirsiniz
+                        </p>
+                        <div class="playlist-scroll">
+                            <ul id="playlist" class="space-y-2"></ul>
+                        </div>
+                    </div>
                 </div>
-            </div>
-
-            <!-- Çalma Listesi -->
-            <div class="glass-effect rounded-xl p-6">
-                <h3 class="text-xl font-bold mb-4 flex items-center justify-between">
-                    <span class="flex items-center gap-2">
-                        <i class="fas fa-list"></i>
-                        Çalma Listesi
-                    </span>
-                    <span class="text-sm font-normal bg-white/10 px-3 py-1 rounded-lg">
-                        Herkes şarkı ekleyebilir
-                    </span>
-                </h3>
-                <p class="text-sm text-white/70 mb-3">
-                    <i class="fas fa-arrows-alt mr-1"></i> Şarkıları sürükleyip bırakarak sıralamayı değiştirebilirsiniz
-                </p>
-                <ul id="playlist" class="space-y-2"></ul>
             </div>
         </div>
     </div>
@@ -187,7 +215,7 @@
                 document.getElementById('loginSection').style.display = 'none';
                 document.getElementById('createJoinSection').style.display = 'none';
                 document.getElementById('playerSection').style.display = 'block';
-                document.querySelector('.glass-effect').style.display = 'block'; // Kullanıcılar bölümünü göster
+                document.getElementById('userSection').style.display = 'block'; // Kullanıcılar bölümünü göster
                 socket.emit('joinRoom', { roomId, username });
             }
         }
@@ -244,7 +272,7 @@
             updatePlaylistUI();
             
             // Eğer hiç şarkı çalmıyorsa ve yeni şarkı eklendiyse ilk şarkıyı çal
-            if (!isPlaying && songs.length > 0) {
+            if (!isPlaying && songs.length > 0 && audioPlayer.paused) {
                 playSong(songs.length - 1); // Son eklenen şarkıyı çal
             }
         });
@@ -306,29 +334,30 @@
             playlist.innerHTML = '';
             currentPlaylist.forEach((song, index) => {
                 const li = document.createElement('li');
-                li.className = `playlist-item p-3 rounded-lg flex items-center gap-3 ${
+                li.className = `playlist-item p-3 rounded-lg flex items-center gap-2 ${
                     index === currentTrack ? 'bg-indigo-600' : 'bg-white/10 hover:bg-white/20'
                 }`;
                 li.dataset.index = index;
                 
                 // Sürükle-bırak için tutamaç ekleyelim
                 const dragHandle = document.createElement('span');
-                dragHandle.className = 'sortable-handle w-8 h-8 flex items-center justify-center rounded-full bg-white/10';
+                dragHandle.className = 'sortable-handle w-6 h-6 flex items-center justify-center rounded-full bg-white/10';
                 dragHandle.innerHTML = '<i class="fas fa-grip-vertical"></i>';
                 li.appendChild(dragHandle);
                 
                 // Şarkı numarası
                 const numberSpan = document.createElement('span');
-                numberSpan.className = 'w-8 h-8 flex items-center justify-center rounded-full bg-white/10';
+                numberSpan.className = 'w-6 h-6 flex items-center justify-center rounded-full bg-white/10 text-xs';
                 numberSpan.textContent = index + 1;
                 li.appendChild(numberSpan);
 
                 // Şarkı adı ve ekleyen kişi
                 const nameContainer = document.createElement('div');
-                nameContainer.className = 'flex-1';
+                nameContainer.className = 'flex-1 truncate';
                 
                 const nameSpan = document.createElement('div');
-                nameSpan.className = 'font-medium flex items-center';
+                nameSpan.className = 'font-medium flex items-center truncate';
+                nameSpan.title = song.name; // Tam adı tooltip olarak göster
                 nameSpan.textContent = song.name;
                 
                 nameContainer.appendChild(nameSpan);
@@ -336,26 +365,52 @@
                 // Ekleyen kişi bilgisi
                 if (song.addedBy) {
                     const addedBySpan = document.createElement('div');
-                    addedBySpan.className = 'text-xs text-white/70 mt-1 flex items-center gap-1';
+                    addedBySpan.className = 'text-xs text-white/70 mt-1 flex items-center gap-1 truncate';
                     addedBySpan.innerHTML = `<i class="fas fa-user-plus"></i> <span>Ekleyen: ${song.addedBy}</span>`;
                     nameContainer.appendChild(addedBySpan);
                 }
                 
                 li.appendChild(nameContainer);
 
+                // Butonlar için container
+                const buttonContainer = document.createElement('div');
+                buttonContainer.className = 'flex items-center gap-1 shrink-0';
+
+                // En Üste Al butonu
+                if (index > 0) { // İlk şarkı zaten en üstte olduğu için ona buton eklemiyoruz
+                    const moveTopButton = document.createElement('button');
+                    moveTopButton.className = 'w-7 h-7 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 text-white';
+                    moveTopButton.innerHTML = '<i class="fas fa-arrow-up"></i>';
+                    moveTopButton.title = 'En Üste Al';
+                    moveTopButton.onclick = (e) => {
+                        e.stopPropagation();
+                        // Şarkıyı en üste taşı
+                        socket.emit('reorderPlaylist', {
+                            roomId,
+                            oldIndex: index,
+                            newIndex: 0
+                        });
+                    };
+                    buttonContainer.appendChild(moveTopButton);
+                }
+
                 // Oynat/Duraklat butonu
                 const playButton = document.createElement('button');
-                playButton.className = 'w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20';
+                playButton.className = `w-7 h-7 flex items-center justify-center rounded-full ${
+                    index === currentTrack && isPlaying ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'
+                } text-white`;
                 playButton.innerHTML = index === currentTrack && isPlaying ? 
                     '<i class="fas fa-pause"></i>' : 
                     '<i class="fas fa-play"></i>';
-                li.appendChild(playButton);
-
-                // Tıklama olayını sadece oynat butonuna ve şarkı adına ekleyelim
                 playButton.onclick = (e) => {
                     e.stopPropagation();
                     playSong(index);
                 };
+                buttonContainer.appendChild(playButton);
+
+                li.appendChild(buttonContainer);
+
+                // Tıklama olayını sadece şarkı adına ekleyelim
                 nameContainer.onclick = (e) => {
                     e.stopPropagation();
                     playSong(index);
@@ -529,10 +584,13 @@
             const nextTrack = currentTrack + 1;
             if (nextTrack < currentPlaylist.length) {
                 playSong(nextTrack);
+            } else if (currentPlaylist.length > 0) {
+                // Çalma listesi bitti, başa dön
+                playSong(0);
+                showSuccess('Çalma listesi başa döndü');
             } else {
-                // Çalma listesi bitti
+                // Çalma listesi boş
                 isPlaying = false;
-                currentTrack = 0;
                 updatePlaylistUI();
                 showSuccess('Çalma listesi tamamlandı');
             }
