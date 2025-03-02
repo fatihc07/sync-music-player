@@ -271,7 +271,7 @@
 
         /* Room Info Styling */
         .room-info {
-            background: rgba(40, 40, 40, 0.6);
+            background: rgba(181, 53, 53, 0.6);
             border-radius: 20px;
             padding: 20px;
             margin-bottom: 20px;
@@ -1131,7 +1131,6 @@
         socket.on('playSong', (data) => {
             // Çalma durumunu ve mevcut şarkıyı güncelle
             currentTrack = data.index;
-            isPlaying = true;
             
             // Sunucu zaman farkını hesapla
             if (data.serverTime) {
@@ -1150,6 +1149,9 @@
                     });
                 }
                 
+                // Çalma durumunu güncelle
+                isPlaying = true;
+                
                 // Senkronizasyon interval'ini başlat
                 startSyncInterval();
                 
@@ -1157,7 +1159,13 @@
                 document.getElementById('nowPlayingBadge').style.display = 'inline-block';
                 document.getElementById('albumCoverContainer').classList.add('playing');
             } else {
+                // Otomatik çalma kapalıysa, sadece şarkıyı yükle ama çalma
                 audioPlayer.pause();
+                
+                // Çalma durumunu güncelle
+                isPlaying = false;
+                
+                // Senkronizasyon interval'ini durdur
                 stopSyncInterval();
                 
                 // UI güncellemeleri
