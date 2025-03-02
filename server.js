@@ -221,6 +221,7 @@ io.on('connection', (socket) => {
         if (room) {
             room.isPlaying = true;
             room.currentTime = currentTime;
+            room.lastSyncTime = Date.now();
             io.to(roomId).emit('play', currentTime);
         }
     });
@@ -238,12 +239,14 @@ io.on('connection', (socket) => {
         const room = rooms.get(roomId);
         if (room && room.songs[index]) {
             room.currentTrack = index;
-            room.isPlaying = true; // Play butonuna basıldığında çalma durumunu true yap
+            room.isPlaying = true;
             room.currentTime = 0;
+            room.lastSyncTime = Date.now();
             io.to(roomId).emit('playSong', { 
                 song: room.songs[index], 
                 index: index,
-                autoplay: true // Play butonuna basıldığında otomatik çalma açık
+                autoplay: true,
+                serverTime: Date.now()
             });
         }
     });
@@ -329,6 +332,22 @@ io.on('connection', (socket) => {
             
             // Odayı sil
             rooms.delete(roomId);
+        }
+    });
+
+    // Yeni: Periyodik senkronizasyon için event handler ekle
+    socket.on('requestSync', ({ roomId }) => {
+        const room = rooms.get(roomId);
+        if (room && room.isPlaying) {
+            // Çalma süresi hesapla (son senkronizasyondan bu yana geçen süre)
+            const elapsedTime = (Date.now() - room.lastSyncTime) / 1000;
+            const syncedTime = room.currentTime + elapsedTime;
+            
+            // Sadece istek yapan kullanıcıya senkronizasyon bilgisi gönder
+            socket.emit('syncPlayback', {
+                currentTime: syncedTime,
+                serverTime: Date.now()
+            });
         }
     });
 

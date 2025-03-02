@@ -205,39 +205,18 @@
             timeout: 10000
         });
         
-        // Bağlantı durumunu izle
-        socket.on('connect', () => {
-            console.log('Socket.IO bağlantısı kuruldu');
-            
-            // Bağlantı kurulduğunda, eğer oturum bilgisi varsa otomatik giriş yap
-            restoreSession();
-        });
-        
-        socket.on('connect_error', (error) => {
-            console.error('Socket.IO bağlantı hatası:', error);
-            showError('Sunucu bağlantısında sorun oluştu. Sayfa yenilenecek...');
-            setTimeout(() => {
-                window.location.reload();
-            }, 3000);
-        });
-        
-        socket.on('disconnect', (reason) => {
-            console.warn('Socket.IO bağlantısı kesildi:', reason);
-            showError('Sunucu bağlantısı kesildi. Yeniden bağlanılıyor...');
-        });
-
+        // Global değişkenler
         let username = '';
         let currentTrack = 0;
         let roomId = '';
-        const audioPlayer = document.getElementById('audioPlayer');
-        const playlist = document.getElementById('playlist');
-
-        // Çalma listesi yönetimi için global değişkenler ekleyelim
         let currentPlaylist = [];
         let isPlaying = false;
-
-        // Global değişkenlere ekleyelim
         let currentUsers = new Map();
+        let serverTimeOffset = 0; // Ekle: Sunucu ve istemci arasındaki zaman farkı
+        let syncInterval; // Ekle: Senkronizasyon için interval
+        
+        const audioPlayer = document.getElementById('audioPlayer');
+        const playlist = document.getElementById('playlist');
 
         // URL'den room ID'yi al
         const urlParams = new URLSearchParams(window.location.search);
@@ -439,8 +418,34 @@
 
         function playSong(index) {
             if (index >= 0 && index < currentPlaylist.length) {
-            currentTrack = index;
-            socket.emit('playSong', { roomId, index });
+                currentTrack = index;
+                socket.emit('playSong', { roomId, index });
+            }
+        }
+        
+        // Ekle: Senkronizasyon isteği gönderen fonksiyon
+        function requestSync() {
+            if (roomId && isPlaying) {
+                socket.emit('requestSync', { roomId });
+            }
+        }
+        
+        // Ekle: Periyodik senkronizasyon başlat
+        function startSyncInterval() {
+            // Önceki interval'i temizle
+            if (syncInterval) {
+                clearInterval(syncInterval);
+            }
+            
+            // Her 10 saniyede bir senkronizasyon iste
+            syncInterval = setInterval(requestSync, 10000);
+        }
+        
+        // Ekle: Periyodik senkronizasyon durdur
+        function stopSyncInterval() {
+            if (syncInterval) {
+                clearInterval(syncInterval);
+                syncInterval = null;
             }
         }
 
@@ -451,32 +456,60 @@
             // Şarkı sayısını güncelle
             document.getElementById('songCount').textContent = songs.length;
             
-            // Otomatik çalmayı kaldıralım
-            // Eğer hiç şarkı çalmıyorsa ve yeni şarkı eklendiyse ilk şarkıyı çal
-            // if (!isPlaying && songs.length > 0 && audioPlayer.paused) {
-            //     playSong(songs.length - 1); // Son eklenen şarkıyı çal
-            // }
+            // Senkronizasyon iste
+            requestSync();
         });
 
         socket.on('play', (currentTime) => {
-            audioPlayer.currentTime = currentTime;
-            audioPlayer.play().catch(error => {
-                showError('Şarkı çalınırken hata: ' + error.message);
-            });
+            // Çalma durumunu güncelle
             isPlaying = true;
+            
+            // Şarkı pozisyonunu ayarla
+            audioPlayer.currentTime = currentTime;
+            
+            // Şarkıyı çal
+            const playPromise = audioPlayer.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    showError('Şarkı çalınırken hata: ' + error.message);
+                });
+            }
+            
+            // Senkronizasyon interval'ini başlat
+            startSyncInterval();
+            
+            // UI'ı güncelle
             updatePlaylistUI();
         });
 
         socket.on('pause', (currentTime) => {
-            audioPlayer.currentTime = currentTime;
-            audioPlayer.pause();
+            // Çalma durumunu güncelle
             isPlaying = false;
+            
+            // Şarkı pozisyonunu ayarla
+            audioPlayer.currentTime = currentTime;
+            
+            // Şarkıyı duraklat
+            audioPlayer.pause();
+            
+            // Senkronizasyon interval'ini durdur
+            stopSyncInterval();
+            
+            // UI'ı güncelle
             updatePlaylistUI();
         });
 
         socket.on('playSong', (data) => {
+            // Çalma durumunu ve mevcut şarkıyı güncelle
             currentTrack = data.index;
+            isPlaying = true;
             
+            // Sunucu zaman farkını hesapla
+            if (data.serverTime) {
+                serverTimeOffset = Date.now() - data.serverTime;
+            }
+            
+            // Audio player'ı görünür yap
             audioPlayer.style.display = 'block';
             const container = audioPlayer.parentElement;
             
@@ -486,39 +519,71 @@
                 container.removeChild(existingIframe);
             }
             
-            // Şarkı verisi artık bir URL olduğu için doğrudan atayabiliriz
+            // Şarkı URL'sini ayarla
             audioPlayer.src = data.song.data;
             
             // Otomatik çalma parametresine göre çal veya çalma
             if (data.autoplay) {
-                audioPlayer.play().catch(error => {
-                    showError('Şarkı çalınırken hata: ' + error.message);
-                });
-                isPlaying = true;
+                const playPromise = audioPlayer.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => {
+                        showError('Şarkı çalınırken hata: ' + error.message);
+                    });
+                }
+                
+                // Senkronizasyon interval'ini başlat
+                startSyncInterval();
             } else {
                 audioPlayer.pause();
-                isPlaying = false;
+                stopSyncInterval();
             }
             
+            // UI'ı güncelle
             updatePlaylistUI();
-            
-            // Otomatik çalma durumuna göre play eventi gönder veya gönderme
-            if (data.autoplay) {
-                socket.emit('play', { roomId, currentTime: 0 });
+        });
+        
+        // Ekle: Senkronizasyon bilgisi alındığında
+        socket.on('syncPlayback', (data) => {
+            if (isPlaying && !audioPlayer.paused) {
+                // Sunucu zaman farkını güncelle
+                if (data.serverTime) {
+                    serverTimeOffset = Date.now() - data.serverTime;
+                }
+                
+                // Mevcut pozisyon ile sunucudan gelen pozisyon arasındaki farkı hesapla
+                const currentDiff = Math.abs(audioPlayer.currentTime - data.currentTime);
+                
+                // Eğer fark 1 saniyeden fazlaysa senkronize et
+                if (currentDiff > 1) {
+                    console.log(`Şarkı senkronize ediliyor: ${audioPlayer.currentTime.toFixed(2)}s -> ${data.currentTime.toFixed(2)}s`);
+                    audioPlayer.currentTime = data.currentTime;
+                }
             }
         });
 
         socket.on('syncState', (state) => {
             isPlaying = state.isPlaying;
+            currentTrack = state.currentTrack;
+            
             if (state.isPlaying) {
                 audioPlayer.currentTime = state.currentTime;
-                audioPlayer.play().catch(error => {
-                    showError('Şarkı çalınırken hata: ' + error.message);
-                });
+                const playPromise = audioPlayer.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => {
+                        showError('Şarkı çalınırken hata: ' + error.message);
+                    });
+                }
+                
+                // Senkronizasyon interval'ini başlat
+                startSyncInterval();
             } else {
                 audioPlayer.currentTime = state.currentTime;
                 audioPlayer.pause();
+                
+                // Senkronizasyon interval'ini durdur
+                stopSyncInterval();
             }
+            
             updatePlaylistUI();
         });
 
@@ -829,12 +894,21 @@
         audioPlayer.addEventListener('play', () => {
             if (!isPlaying) {
                 playMusic();
+                startSyncInterval();
             }
         });
 
         audioPlayer.addEventListener('pause', () => {
             if (isPlaying) {
                 pauseMusic();
+                stopSyncInterval();
+            }
+        });
+        
+        // Şarkı ileri/geri sarıldığında senkronize et
+        audioPlayer.addEventListener('seeked', () => {
+            if (isPlaying) {
+                playMusic(); // Yeni pozisyonu sunucuya bildir
             }
         });
 
