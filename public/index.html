@@ -109,6 +109,28 @@
                 </h3>
                 <ul id="playlist" class="space-y-2"></ul>
             </div>
+
+            <!-- Kontroller bölümüne YouTube link girişi ekleyelim -->
+            <div class="glass-effect rounded-xl p-6 mb-6">
+                <h3 class="text-xl font-bold mb-4 flex items-center gap-2">
+                    <i class="fab fa-youtube"></i>
+                    YouTube'dan Ekle
+                </h3>
+                <div class="flex gap-2">
+                    <input type="text" id="youtubeLink" placeholder="YouTube video URL'si" 
+                        class="flex-1 px-4 py-2 rounded-lg bg-white/10 border border-white/20 focus:outline-none focus:border-indigo-500">
+                    <button onclick="addYoutubeLink()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300">
+                        <i class="fas fa-plus mr-2"></i>Ekle
+                    </button>
+                </div>
+                <p class="text-xs text-white/70 mt-2">YouTube video linkini yapıştırın ve "Ekle" butonuna tıklayın</p>
+                <div id="youtubeProgress" class="mt-2 hidden">
+                    <div class="flex items-center gap-2">
+                        <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        <span>Video işleniyor...</span>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -293,8 +315,16 @@
                 nameContainer.className = 'flex-1';
                 
                 const nameSpan = document.createElement('div');
-                nameSpan.className = 'font-medium';
+                nameSpan.className = 'font-medium flex items-center';
                 nameSpan.textContent = song.name;
+                
+                // Kaynak ikonu ekle
+                if (song.source === 'youtube') {
+                    const sourceIcon = document.createElement('i');
+                    sourceIcon.className = 'fab fa-youtube text-red-500 ml-2';
+                    nameSpan.appendChild(sourceIcon);
+                }
+                
                 nameContainer.appendChild(nameSpan);
                 
                 // Ekleyen kişi bilgisi
@@ -446,6 +476,53 @@
                 updatePlaylistUI();
                 showSuccess('Çalma listesi tamamlandı');
             }
+        });
+
+        // YouTube link ekleme fonksiyonu
+        function addYoutubeLink() {
+            const linkInput = document.getElementById('youtubeLink');
+            const url = linkInput.value.trim();
+            
+            if (!url) {
+                showError('Lütfen bir YouTube linki girin');
+                return;
+            }
+            
+            // YouTube URL kontrolü
+            if (!isValidYoutubeUrl(url)) {
+                showError('Geçerli bir YouTube linki girin');
+                return;
+            }
+            
+            // İşleme başladığını göster
+            document.getElementById('youtubeProgress').classList.remove('hidden');
+            
+            // Linki server'a gönder
+            socket.emit('addYoutubeLink', { roomId, url });
+            
+            // Input'u temizle
+            linkInput.value = '';
+        }
+        
+        // YouTube URL kontrolü
+        function isValidYoutubeUrl(url) {
+            const pattern = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.?be)\/.+$/;
+            return pattern.test(url);
+        }
+        
+        // YouTube işleme durumu
+        socket.on('processingYoutube', (data) => {
+            showSuccess('YouTube video işleniyor, lütfen bekleyin...');
+        });
+        
+        // İşleme tamamlandığında progress'i gizle
+        socket.on('updatePlaylist', () => {
+            document.getElementById('youtubeProgress').classList.add('hidden');
+        });
+        
+        socket.on('error', (message) => {
+            document.getElementById('youtubeProgress').classList.add('hidden');
+            showError(message);
         });
     </script>
 </body>

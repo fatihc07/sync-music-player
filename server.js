@@ -8,6 +8,21 @@ const io = require('socket.io')(http, {
     },
     maxHttpBufferSize: 1e8 // 100 MB limit
 });
+const ytdl = require('ytdl-core');
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+// FFmpeg yolunu ayarla
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+
+// Geçici dosyalar için klasör
+const tempDir = path.join(os.tmpdir(), 'sync-music-player');
+if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+}
 
 app.use(express.static('public'));
 
@@ -16,6 +31,61 @@ app.get('/', (req, res) => {
 });
 
 const rooms = new Map();
+
+// YouTube linkini işleyen fonksiyon
+async function processYoutubeLink(url) {
+    try {
+        // Video bilgilerini al
+        const info = await ytdl.getInfo(url);
+        const title = info.videoDetails.title;
+        const videoId = info.videoDetails.videoId;
+        
+        // Geçici dosya yolları
+        const tempFilePath = path.join(tempDir, `${videoId}.mp3`);
+        
+        // Eğer dosya zaten varsa, doğrudan döndür
+        if (fs.existsSync(tempFilePath)) {
+            const data = fs.readFileSync(tempFilePath, { encoding: 'base64' });
+            return {
+                name: title,
+                data: `data:audio/mp3;base64,${data}`,
+                source: 'youtube',
+                videoId: videoId
+            };
+        }
+        
+        // YouTube'dan ses akışını al
+        const stream = ytdl(url, { 
+            quality: 'highestaudio',
+            filter: 'audioonly'
+        });
+        
+        // MP3'e dönüştür
+        return new Promise((resolve, reject) => {
+            ffmpeg(stream)
+                .audioBitrate(128)
+                .format('mp3')
+                .on('error', (err) => {
+                    console.error('FFmpeg error:', err);
+                    reject(err);
+                })
+                .on('end', () => {
+                    // Dosyayı base64'e dönüştür
+                    const data = fs.readFileSync(tempFilePath, { encoding: 'base64' });
+                    resolve({
+                        name: title,
+                        data: `data:audio/mp3;base64,${data}`,
+                        source: 'youtube',
+                        videoId: videoId
+                    });
+                })
+                .save(tempFilePath);
+        });
+    } catch (error) {
+        console.error('YouTube processing error:', error);
+        throw error;
+    }
+}
 
 io.on('connection', (socket) => {
     socket.on('createRoom', () => {
@@ -116,6 +186,45 @@ io.on('connection', (socket) => {
                 song: room.songs[index], 
                 index: index 
             });
+        }
+    });
+
+    socket.on('addYoutubeLink', async ({ roomId, url }) => {
+        const room = rooms.get(roomId);
+        if (room) {
+            try {
+                // YouTube linkini işle
+                socket.emit('processingYoutube', { url });
+                const song = await processYoutubeLink(url);
+                
+                // Ekleyen kişi bilgisini ekle
+                song.addedBy = room.users.get(socket.id) || 'Bilinmeyen Kullanıcı';
+                
+                // Şarkıyı odaya ekle
+                room.songs.push(song);
+                io.to(roomId).emit('updatePlaylist', room.songs);
+                
+                // Yeni şarkı eklendi bildirimi
+                io.to(roomId).emit('songAdded', { 
+                    songName: song.name, 
+                    addedBy: song.addedBy,
+                    source: 'youtube'
+                });
+                
+                // Eğer ilk şarkıysa veya hiçbir şarkı çalmıyorsa otomatik başlat
+                if (room.songs.length === 1 || !room.isPlaying) {
+                    const index = room.songs.length - 1;
+                    room.currentTrack = index;
+                    room.isPlaying = true;
+                    room.currentTime = 0;
+                    io.to(roomId).emit('playSong', { 
+                        song: room.songs[index], 
+                        index: index 
+                    });
+                }
+            } catch (error) {
+                socket.emit('error', `YouTube video işlenirken hata: ${error.message}`);
+            }
         }
     });
 
