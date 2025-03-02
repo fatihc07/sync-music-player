@@ -62,6 +62,9 @@
                 <span id="userCount" class="bg-indigo-600 px-3 py-1 rounded-full text-sm">0 Kullanıcı</span>
             </div>
             <div class="flex flex-wrap gap-2" id="userList"></div>
+            <div class="mt-4 text-sm text-white/70 bg-white/10 p-3 rounded-lg">
+                <p class="flex items-center gap-2"><i class="fas fa-info-circle"></i> Odadaki herkes şarkı ekleyebilir ve çalma listesini kontrol edebilir.</p>
+            </div>
         </div>
 
         <!-- Müzik Çalar Bölümü -->
@@ -80,10 +83,11 @@
                     <div class="flex-1">
                         <label class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg cursor-pointer transition duration-300 flex items-center justify-center gap-2">
                             <i class="fas fa-music mr-2"></i>
-                            Müzik Ekle
+                            Şarkı Ekle
                             <input type="file" id="localFile" accept=".mp3,.flac,.wav,audio/mp3,audio/flac,audio/wav" onchange="addLocalFile()" multiple class="hidden">
                         </label>
                         <p class="text-xs text-white/70 mt-2 text-center">Desteklenen formatlar: MP3, FLAC, WAV</p>
+                        <p class="text-xs text-white/70 mt-1 text-center">Eklediğiniz şarkılar odadaki herkesle paylaşılır</p>
                     </div>
                 </div>
                 
@@ -94,9 +98,14 @@
 
             <!-- Çalma Listesi -->
             <div class="glass-effect rounded-xl p-6">
-                <h3 class="text-xl font-bold mb-4 flex items-center gap-2">
-                    <i class="fas fa-list"></i>
-                    Çalma Listesi
+                <h3 class="text-xl font-bold mb-4 flex items-center justify-between">
+                    <span class="flex items-center gap-2">
+                        <i class="fas fa-list"></i>
+                        Çalma Listesi
+                    </span>
+                    <span class="text-sm font-normal bg-white/10 px-3 py-1 rounded-lg">
+                        Herkes şarkı ekleyebilir
+                    </span>
                 </h3>
                 <ul id="playlist" class="space-y-2"></ul>
             </div>
