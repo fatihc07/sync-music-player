@@ -485,8 +485,10 @@
         
         // Oda silme fonksiyonu
         function deleteRoom() {
-            socket.emit('deleteRoom', { roomId });
-            showSuccess('Oda silme isteği gönderildi...');
+            if (roomId) {
+                socket.emit('deleteRoom', { roomId });
+                showSuccess('Oda siliniyor...');
+            }
         }
         
         // Oda silindiğinde
@@ -496,10 +498,39 @@
             // Oturum bilgisini temizle
             localStorage.removeItem('musicRoomSession');
             
-            // 3 saniye sonra ana sayfaya yönlendir
-            setTimeout(() => {
-                window.location.href = window.location.origin;
-            }, 3000);
+            // Tüm bölümleri sıfırla
+            document.getElementById('playerSection').style.display = 'none';
+            document.getElementById('userSection').style.display = 'none';
+            document.getElementById('loginSection').style.display = 'none';
+            document.getElementById('roomLinkSection').style.display = 'none';
+            document.getElementById('createJoinSection').style.display = 'block';
+            
+            // Çalma listesini temizle
+            currentPlaylist = [];
+            updatePlaylistUI();
+            
+            // Audio player'ı durdur ve sıfırla
+            if (audioPlayer) {
+                audioPlayer.pause();
+                audioPlayer.src = '';
+            }
+            
+            // Senkronizasyon interval'ini durdur
+            stopSyncInterval();
+            
+            // URL'yi temizle
+            window.history.pushState({}, '', window.location.pathname);
+            
+            // Kullanıcı bilgilerini sıfırla
+            username = '';
+            roomId = '';
+            currentTrack = 0;
+            isPlaying = false;
+            
+            // 3 saniye sonra ana sayfaya yönlendirme yerine hemen ana ekranı göster
+            // setTimeout(() => {
+            //     window.location.href = window.location.origin;
+            // }, 3000);
         });
         
         // Oturum bilgisini localStorage'a kaydet

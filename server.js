@@ -314,14 +314,19 @@ io.on('connection', (socket) => {
                     
                     // Odaya ait şarkıları bul ve sil
                     room.songs.forEach(song => {
-                        const songFileName = song.data.split('/').pop(); // /songs/filename.mp3 -> filename.mp3
-                        
-                        files.forEach(file => {
-                            if (file === songFileName) {
-                                fs.unlinkSync(path.join(songsDir, file));
-                                deletedCount++;
-                            }
-                        });
+                        if (song.data && song.data.startsWith('/songs/')) {
+                            const songFileName = song.data.split('/').pop(); // /songs/filename.mp3 -> filename.mp3
+                            
+                            files.forEach(file => {
+                                if (file === songFileName) {
+                                    const filePath = path.join(songsDir, file);
+                                    if (fs.existsSync(filePath)) {
+                                        fs.unlinkSync(filePath);
+                                        deletedCount++;
+                                    }
+                                }
+                            });
+                        }
                     });
                     
                     console.log(`Oda silindi: ${roomId}, ${deletedCount} şarkı dosyası temizlendi`);
@@ -330,8 +335,22 @@ io.on('connection', (socket) => {
                 console.error('Oda şarkılarını silme hatası:', err);
             }
             
+            // Odadaki tüm kullanıcıları odadan çıkar
+            const socketsInRoom = io.sockets.adapter.rooms.get(roomId);
+            if (socketsInRoom) {
+                for (const socketId of socketsInRoom) {
+                    const clientSocket = io.sockets.sockets.get(socketId);
+                    if (clientSocket) {
+                        clientSocket.leave(roomId);
+                    }
+                }
+            }
+            
             // Odayı sil
             rooms.delete(roomId);
+            console.log(`Oda başarıyla silindi: ${roomId}`);
+        } else {
+            socket.emit('error', 'Oda bulunamadı veya zaten silinmiş');
         }
     });
 
