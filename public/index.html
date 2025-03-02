@@ -429,6 +429,17 @@
                                 <input type="file" id="localFile" accept=".mp3,.flac,.wav,audio/mp3,audio/flac,audio/wav" onchange="addLocalFile()" multiple class="hidden">
                             </label>
                             <p class="text-xs text-gray-500 mt-2 text-center">Desteklenen formatlar: MP3, FLAC, WAV</p>
+                            
+                            <!-- Yükleme ilerleme çubuğu -->
+                            <div id="uploadProgressContainer" class="mt-4 hidden">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="text-sm text-gray-600" id="uploadProgressText">Yükleniyor: 0%</span>
+                                    <span class="text-sm text-gray-600" id="uploadProgressFile"></span>
+                                </div>
+                                <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                    <div id="uploadProgressBar" class="bg-indigo-600 h-2.5 rounded-full" style="width: 0%"></div>
+                                </div>
+                            </div>
                         </div>
                         
                         <!-- Gizli audio player -->
@@ -650,33 +661,99 @@
                 return;
             }
             
-            showSuccess(`${totalFiles} şarkı yükleniyor...`);
+            // İlerleme çubuğunu göster ve sıfırla
+            const progressContainer = document.getElementById('uploadProgressContainer');
+            const progressBar = document.getElementById('uploadProgressBar');
+            const progressText = document.getElementById('uploadProgressText');
+            const progressFile = document.getElementById('uploadProgressFile');
             
-            for (let file of files) {
+            progressContainer.classList.remove('hidden');
+            progressBar.style.width = '0%';
+            progressText.textContent = 'Yükleniyor: 0%';
+            progressFile.textContent = '';
+            
+            showSuccess(`${totalFiles} şarkı yükleniyor...`);
+            console.log(`Yükleme başlatıldı: ${totalFiles} dosya`);
+            
+            // Her dosya için toplam ilerlemeyi hesaplamak için
+            let totalProgress = 0;
+            
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                
                 if (file.size > 50 * 1024 * 1024) {
                     showError(`${file.name} dosyası çok büyük (Max: 50MB)`);
                     continue;
                 }
 
+                console.log(`Dosya işleniyor: ${file.name}, boyut: ${(file.size / 1024 / 1024).toFixed(2)}MB`);
+                progressFile.textContent = `${file.name} (${i+1}/${totalFiles})`;
+                
                 const reader = new FileReader();
-                reader.onload = function(e) {
-                    const song = {
-                        name: file.name,
-                        data: e.target.result,
-                        addedBy: username
-                    };
-                    socket.emit('addSong', { roomId, song });
-                    filesAdded++;
-
-                    if (filesAdded === totalFiles) {
-                        showSuccess(`${totalFiles} şarkı başarıyla eklendi`);
-                        // Dosya seçiciyi sıfırla
-                        document.getElementById('localFile').value = '';
+                
+                // İlerleme olayını dinle
+                reader.onprogress = function(e) {
+                    if (e.lengthComputable) {
+                        // Mevcut dosya için ilerleme yüzdesi
+                        const fileProgress = Math.round((e.loaded / e.total) * 100);
+                        
+                        // Tüm dosyalar için toplam ilerleme yüzdesi
+                        // Her dosya eşit ağırlıkta kabul edilir
+                        const fileContribution = fileProgress / totalFiles;
+                        const previousFilesContribution = (i / totalFiles) * 100;
+                        totalProgress = previousFilesContribution + fileContribution;
+                        
+                        // İlerleme çubuğunu güncelle
+                        progressBar.style.width = `${totalProgress}%`;
+                        progressText.textContent = `Yükleniyor: ${Math.round(totalProgress)}%`;
                     }
                 };
-                reader.onerror = function() {
+                
+                reader.onload = function(e) {
+                    console.log(`Dosya okundu: ${file.name}`);
+                    
+                    try {
+                        const song = {
+                            name: file.name,
+                            data: e.target.result,
+                            addedBy: username
+                        };
+                        
+                        console.log(`Sunucuya gönderiliyor: ${file.name}`);
+                        progressText.textContent = `${file.name} sunucuya yükleniyor...`;
+                        
+                        socket.emit('addSong', { roomId, song }, (response) => {
+                            if (response && response.success) {
+                                console.log(`Şarkı başarıyla eklendi: ${file.name}`);
+                                filesAdded++;
+                                
+                                // Tüm dosyalar tamamlandıysa
+                                if (filesAdded === totalFiles) {
+                                    showSuccess(`${totalFiles} şarkı başarıyla eklendi`);
+                                    // İlerleme çubuğunu gizle
+                                    setTimeout(() => {
+                                        progressContainer.classList.add('hidden');
+                                    }, 2000);
+                                    // Dosya seçiciyi sıfırla
+                                    document.getElementById('localFile').value = '';
+                                }
+                            } else if (response && response.error) {
+                                showError(`Hata: ${response.error}`);
+                                console.error(`Şarkı eklenirken hata: ${response.error}`);
+                            }
+                        });
+                    } catch (error) {
+                        console.error(`Şarkı işlenirken hata: ${error.message}`);
+                        showError(`Şarkı işlenirken hata: ${error.message}`);
+                    }
+                };
+                
+                reader.onerror = function(error) {
+                    console.error(`Dosya okuma hatası: ${error}`);
                     showError(`${file.name} yüklenirken hata oluştu`);
                 };
+                
+                // Dosyayı base64 olarak oku
                 reader.readAsDataURL(file);
             }
         }

@@ -99,6 +99,8 @@ const rooms = new Map();
 
 // Base64 veriyi dosyaya kaydet ve dosya yolunu döndür
 function saveBase64ToFile(base64Data, fileName) {
+    console.log(`saveBase64ToFile çağrıldı: ${fileName}`);
+    
     // Dosya adını güvenli hale getir
     const safeFileName = fileName.replace(/[^a-zA-Z0-9.]/g, '_');
     
@@ -109,16 +111,34 @@ function saveBase64ToFile(base64Data, fileName) {
     const uniqueFileName = `${baseName}_${uniqueId}${fileExt}`;
     
     const filePath = path.join(songsDir, uniqueFileName);
+    console.log(`Hedef dosya yolu: ${filePath}`);
     
-    // Base64 veriyi ayır (data:audio/mp3;base64,...)
-    const matches = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-    
-    if (matches && matches.length === 3) {
+    try {
+        // Base64 veriyi ayır (data:audio/mp3;base64,...)
+        const matches = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+        
+        if (!matches || matches.length !== 3) {
+            console.error('Geçersiz base64 veri formatı');
+            throw new Error('Geçersiz base64 veri formatı');
+        }
+        
         const buffer = Buffer.from(matches[2], 'base64');
+        console.log(`Buffer oluşturuldu, boyut: ${buffer.length} byte`);
+        
+        // Klasörün varlığını kontrol et
+        if (!fs.existsSync(songsDir)) {
+            console.log(`Klasör bulunamadı, oluşturuluyor: ${songsDir}`);
+            fs.mkdirSync(songsDir, { recursive: true });
+        }
+        
+        // Dosyayı yaz
         fs.writeFileSync(filePath, buffer);
+        console.log(`Dosya başarıyla yazıldı: ${filePath}`);
+        
         return `/songs/${uniqueFileName}`;
-    } else {
-        throw new Error('Geçersiz base64 veri formatı');
+    } catch (error) {
+        console.error(`Dosya kaydetme hatası: ${error.message}`);
+        throw error;
     }
 }
 
@@ -162,55 +182,83 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('addSong', ({ roomId, song }) => {
+    socket.on('addSong', ({ roomId, song }, callback) => {
+        console.log(`Şarkı ekleme isteği alındı: ${song.name}, Oda: ${roomId}`);
+        
         const room = rooms.get(roomId);
-        if (room) {
-            // Şarkıya ekleyen kişi bilgisini ekleyelim
-            if (!song.addedBy) {
-                song.addedBy = room.users.get(socket.id) || 'Bilinmeyen Kullanıcı';
+        if (!room) {
+            console.error(`Oda bulunamadı: ${roomId}`);
+            if (typeof callback === 'function') {
+                callback({ success: false, error: 'Oda bulunamadı' });
+            } else {
+                socket.emit('error', 'Oda bulunamadı');
+            }
+            return;
+        }
+        
+        // Şarkıya ekleyen kişi bilgisini ekleyelim
+        if (!song.addedBy) {
+            song.addedBy = room.users.get(socket.id) || 'Bilinmeyen Kullanıcı';
+        }
+        
+        try {
+            console.log(`Şarkı verisi işleniyor: ${song.name}`);
+            
+            // Base64 veri kontrolü
+            if (!song.data || typeof song.data !== 'string' || !song.data.startsWith('data:')) {
+                throw new Error('Geçersiz şarkı verisi');
             }
             
-            try {
-                // Base64 veriyi dosyaya kaydet
-                const filePath = saveBase64ToFile(song.data, song.name);
-                
-                // Şarkı nesnesini güncelle
-                const songObj = {
-                    name: song.name,
-                    data: filePath, // Artık base64 değil, dosya yolu
-                    addedBy: song.addedBy,
-                    addedAt: Date.now()
-                };
-                
-                // Şarkıyı çalma listesine ekle
-                room.songs.push(songObj);
-                
-                // Tüm kullanıcılara güncel çalma listesini gönder
-                io.to(roomId).emit('updatePlaylist', room.songs);
-                
-                // Yeni şarkı eklendi bildirimi
-                io.to(roomId).emit('songAdded', { 
-                    songName: song.name, 
-                    addedBy: song.addedBy 
+            // Base64 veriyi dosyaya kaydet
+            console.log(`Dosya kaydediliyor: ${song.name}`);
+            const filePath = saveBase64ToFile(song.data, song.name);
+            console.log(`Dosya kaydedildi: ${filePath}`);
+            
+            // Şarkı nesnesini güncelle
+            const songObj = {
+                name: song.name,
+                data: filePath, // Artık base64 değil, dosya yolu
+                addedBy: song.addedBy,
+                addedAt: Date.now()
+            };
+            
+            // Şarkıyı çalma listesine ekle
+            room.songs.push(songObj);
+            
+            // Tüm kullanıcılara güncel çalma listesini gönder
+            io.to(roomId).emit('updatePlaylist', room.songs);
+            
+            // Yeni şarkı eklendi bildirimi
+            io.to(roomId).emit('songAdded', { 
+                songName: song.name, 
+                addedBy: song.addedBy 
+            });
+            
+            console.log(`Şarkı başarıyla eklendi: ${song.name}, Toplam: ${room.songs.length}`);
+            
+            // Eğer ilk şarkıysa veya hiçbir şarkı çalmıyorsa otomatik başlat
+            if (room.songs.length === 1 || !room.isPlaying) {
+                const index = room.songs.length - 1;
+                room.currentTrack = index;
+                // Otomatik çalmayı kaldıralım
+                // room.isPlaying = true;
+                room.currentTime = 0;
+                io.to(roomId).emit('playSong', { 
+                    song: room.songs[index], 
+                    index: index,
+                    autoplay: false // Otomatik çalma kapalı
                 });
-                
-                console.log(`Şarkı eklendi: ${song.name}, Toplam: ${room.songs.length}`);
-                
-                // Eğer ilk şarkıysa veya hiçbir şarkı çalmıyorsa otomatik başlat
-                if (room.songs.length === 1 || !room.isPlaying) {
-                    const index = room.songs.length - 1;
-                    room.currentTrack = index;
-                    // Otomatik çalmayı kaldıralım
-                    // room.isPlaying = true;
-                    room.currentTime = 0;
-                    io.to(roomId).emit('playSong', { 
-                        song: room.songs[index], 
-                        index: index,
-                        autoplay: false // Otomatik çalma kapalı
-                    });
-                }
-            } catch (error) {
-                console.error('Şarkı kaydetme hatası:', error);
+            }
+            
+            // Başarı durumunu bildir
+            if (typeof callback === 'function') {
+                callback({ success: true });
+            }
+        } catch (error) {
+            console.error('Şarkı kaydetme hatası:', error);
+            if (typeof callback === 'function') {
+                callback({ success: false, error: error.message });
+            } else {
                 socket.emit('error', 'Şarkı kaydedilemedi: ' + error.message);
             }
         }
