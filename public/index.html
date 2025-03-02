@@ -453,8 +453,8 @@
             }
             
             .container {
-                padding: 0;
-            }
+            padding: 0;
+        }
             
             .header {
                 background-color: #f5f5f7;
@@ -592,16 +592,16 @@
                 color: #333;
             }
             
-            .playlist-item {
+        .playlist-item {
                 padding: 8px 0;
                 border-radius: 8px;
                 margin-bottom: 5px;
                 background-color: #fff;
-                padding: 10px;
+            padding: 10px;
                 box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
-            }
+        }
             
-            .playlist-item:hover {
+        .playlist-item:hover {
                 background-color: #f9f9f9;
             }
             
@@ -716,7 +716,7 @@
             }
             
             .form-input {
-                padding: 10px;
+            padding: 10px;
                 background-color: #f5f5f7;
                 color: #333;
                 font-size: 14px;
@@ -887,6 +887,50 @@
         #player-container, #room-info, #playlist-container {
             display: none;
         }
+
+        /* Heading Card Styles */
+        .heading-card {
+            background-color: white;
+            border: 1px solid #eaeaea;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.1);
+            padding: 12px 20px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: all 0.3s ease;
+        }
+
+        .heading-card:hover {
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08), 0 3px 6px rgba(0, 0, 0, 0.12);
+            transform: translateY(-2px);
+        }
+
+        .heading-card h2, .heading-card h3 {
+            margin: 0;
+            color: #333;
+            font-weight: 600;
+        }
+
+        .heading-card .heading-icon {
+            color: #4f46e5;
+            margin-right: 10px;
+            font-size: 1.2em;
+        }
+
+        .heading-card .heading-content {
+            display: flex;
+            align-items: center;
+        }
+
+        /* Mobile view adjustments for heading cards */
+        @media (max-width: 768px) {
+            .heading-card {
+                padding: 10px 15px;
+                margin-bottom: 12px;
+            }
+        }
     </style>
 </head>
 <body class="gradient-bg min-h-screen text-gray-800">
@@ -917,7 +961,7 @@
                     </button>
                 </div>
             </div>
-        </div>
+    </div>
 
         <!-- Oda Oluşturma Bölümü -->
         <div id="createJoinSection" class="glass-effect rounded-xl p-6 mb-6">
@@ -925,7 +969,7 @@
                 <i class="fas fa-plus-circle"></i>
                 Yeni Oda Oluştur
             </button>
-        </div>
+    </div>
 
         <!-- Giriş Bölümü -->
         <div id="loginSection" style="display: none;" class="glass-effect rounded-xl p-6 mb-6">
@@ -937,7 +981,7 @@
                 </button>
             </div>
         </div>
-
+        
         <!-- Kullanıcılar Bölümü -->
         <div id="userSection" class="glass-effect rounded-xl p-6 mb-6">
             <div class="flex justify-between items-center mb-4">
@@ -960,20 +1004,13 @@
                 <!-- Sol sütun: Çalma Listesi -->
                 <div class="md:w-1/2 playlist-container">
                     <div class="glass-effect rounded-xl p-6 h-full flex flex-col">
-                        <h3 class="text-xl font-bold mb-4 flex items-center justify-between text-gray-700">
-                            <span class="flex items-center gap-2">
-                                <i class="fas fa-list text-indigo-600"></i>
-                                Çalma Listesi
-                            </span>
-                            <div class="flex items-center gap-2">
-                                <button onclick="refreshPlaylist()" class="w-7 h-7 flex items-center justify-center rounded-full bg-indigo-600 hover:bg-indigo-700 text-white" title="Çalma Listesini Yenile">
-                                    <i class="fas fa-sync-alt"></i>
-                                </button>
-                                <span class="text-sm font-normal bg-white/80 px-3 py-1 rounded-lg text-indigo-600">
-                                    <span id="songCount">0</span> Şarkı
-                                </span>
+                        <div class="heading-card">
+                            <div class="heading-content">
+                                <span class="heading-icon"><i class="fas fa-music"></i></span>
+                                <h2>Çalma Listesi</h2>
                             </div>
-                        </h3>
+                        </div>
+                        <div id="playlist" class="playlist"></div>
                         <p class="text-sm text-gray-500 mb-3">
                             <i class="fas fa-arrows-alt mr-1"></i> Şarkıları sürükleyip bırakarak sıralamayı değiştirebilirsiniz
                         </p>
