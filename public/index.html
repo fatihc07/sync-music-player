@@ -172,9 +172,14 @@
                                 <i class="fas fa-list"></i>
                                 Çalma Listesi
                             </span>
-                            <span class="text-sm font-normal bg-white/10 px-3 py-1 rounded-lg">
-                                <span id="songCount">0</span> Şarkı
-                            </span>
+                            <div class="flex items-center gap-2">
+                                <button onclick="refreshPlaylist()" class="w-7 h-7 flex items-center justify-center rounded-full bg-indigo-600 hover:bg-indigo-700 text-white" title="Çalma Listesini Yenile">
+                                    <i class="fas fa-sync-alt"></i>
+                                </button>
+                                <span class="text-sm font-normal bg-white/10 px-3 py-1 rounded-lg">
+                                    <span id="songCount">0</span> Şarkı
+                                </span>
+                            </div>
                         </h3>
                         <p class="text-sm text-white/70 mb-3">
                             <i class="fas fa-arrows-alt mr-1"></i> Şarkıları sürükleyip bırakarak sıralamayı değiştirebilirsiniz
@@ -634,6 +639,24 @@
                 // Web Share API desteklenmiyorsa kopyalama yöntemini kullan
                 copyLink();
             }
+        }
+        
+        // Çalma listesini yenileme fonksiyonu
+        function refreshPlaylist() {
+            // Yenileme animasyonu göster
+            const refreshButton = document.querySelector('.fa-sync-alt');
+            refreshButton.classList.add('fa-spin');
+            
+            // Sunucudan güncel çalma listesini iste
+            socket.emit('requestPlaylist', { roomId });
+            
+            // Bildirim göster
+            showSuccess('Çalma listesi yenileniyor...');
+            
+            // 1 saniye sonra animasyonu durdur
+            setTimeout(() => {
+                refreshButton.classList.remove('fa-spin');
+            }, 1000);
         }
 
         // Audio player hata yönetimi

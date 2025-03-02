@@ -164,6 +164,20 @@ io.on('connection', (socket) => {
             });
         }
     });
+    
+    // Çalma listesini yenileme isteği
+    socket.on('requestPlaylist', ({ roomId }) => {
+        const room = rooms.get(roomId);
+        if (room) {
+            // Sadece istek yapan kullanıcıya güncel çalma listesini gönder
+            socket.emit('updatePlaylist', room.songs);
+            socket.emit('currentTrackChanged', room.currentTrack);
+            
+            // Kullanıcı adını al
+            const username = room.users.get(socket.id) || 'Bilinmeyen Kullanıcı';
+            console.log(`${username} çalma listesini yeniledi, ${room.songs.length} şarkı gönderildi`);
+        }
+    });
 
     socket.on('disconnect', () => {
         rooms.forEach((room, roomId) => {
