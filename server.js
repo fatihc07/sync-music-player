@@ -14,10 +14,9 @@ const os = require('os');
 const crypto = require('crypto');
 
 // Geçici dosyalar için klasör
-const tempDir = path.join(__dirname, 'temp');
+const tempDir = path.join(os.tmpdir(), 'sync-music-player');
 if (!fs.existsSync(tempDir)) {
     fs.mkdirSync(tempDir, { recursive: true });
-    console.log(`Geçici klasör oluşturuldu: ${tempDir}`);
 }
 
 // Şarkılar için klasör
@@ -98,20 +97,8 @@ app.get('/', (req, res) => {
 
 const rooms = new Map();
 
-// Oda başına klasör oluşturma fonksiyonu
-function ensureRoomDirectory(roomId) {
-    const roomDir = path.join(tempDir, roomId);
-    if (!fs.existsSync(roomDir)) {
-        fs.mkdirSync(roomDir, { recursive: true });
-        console.log(`Oda klasörü oluşturuldu: ${roomDir}`);
-    }
-    return roomDir;
-}
-
 // Base64 veriyi dosyaya kaydet ve dosya yolunu döndür
 function saveBase64ToFile(base64Data, fileName) {
-    console.log(`saveBase64ToFile çağrıldı: ${fileName}`);
-    
     // Dosya adını güvenli hale getir
     const safeFileName = fileName.replace(/[^a-zA-Z0-9.]/g, '_');
     
@@ -122,34 +109,56 @@ function saveBase64ToFile(base64Data, fileName) {
     const uniqueFileName = `${baseName}_${uniqueId}${fileExt}`;
     
     const filePath = path.join(songsDir, uniqueFileName);
-    console.log(`Hedef dosya yolu: ${filePath}`);
     
-    try {
-        // Base64 veriyi ayır (data:audio/mp3;base64,...)
-        const matches = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-        
-        if (!matches || matches.length !== 3) {
-            console.error('Geçersiz base64 veri formatı');
-            throw new Error('Geçersiz base64 veri formatı');
-        }
-        
+    // Base64 veriyi ayır (data:audio/mp3;base64,...)
+    const matches = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    
+    if (matches && matches.length === 3) {
         const buffer = Buffer.from(matches[2], 'base64');
-        console.log(`Buffer oluşturuldu, boyut: ${buffer.length} byte`);
-        
-        // Klasörün varlığını kontrol et
-        if (!fs.existsSync(songsDir)) {
-            console.log(`Klasör bulunamadı, oluşturuluyor: ${songsDir}`);
-            fs.mkdirSync(songsDir, { recursive: true });
-        }
-        
-        // Dosyayı yaz
         fs.writeFileSync(filePath, buffer);
-        console.log(`Dosya başarıyla yazıldı: ${filePath}`);
-        
         return `/songs/${uniqueFileName}`;
-    } catch (error) {
-        console.error(`Dosya kaydetme hatası: ${error.message}`);
-        throw error;
+    } else {
+        throw new Error('Geçersiz base64 veri formatı');
+    }
+}
+
+// Periyodik senkronizasyon için interval
+const syncIntervals = new Map();
+
+// Odaya özel senkronizasyon interval'i başlat
+function startRoomSyncInterval(roomId) {
+    // Eğer bu oda için zaten bir interval varsa, önce onu temizle
+    if (syncIntervals.has(roomId)) {
+        clearInterval(syncIntervals.get(roomId));
+    }
+    
+    // Her 5 saniyede bir odadaki tüm kullanıcılara senkronizasyon bilgisi gönder
+    const intervalId = setInterval(() => {
+        const room = rooms.get(roomId);
+        if (room && room.isPlaying) {
+            // Çalma süresi hesapla (son senkronizasyondan bu yana geçen süre)
+            const elapsedTime = (Date.now() - room.lastSyncTime) / 1000;
+            const syncedTime = room.currentTime + elapsedTime;
+            
+            // Odadaki tüm kullanıcılara senkronizasyon bilgisi gönder
+            io.to(roomId).emit('syncPlayback', {
+                currentTime: syncedTime,
+                serverTime: Date.now(),
+                currentTrack: room.currentTrack
+            });
+            
+            console.log(`Oda ${roomId} için senkronizasyon gönderildi: ${syncedTime.toFixed(2)}s`);
+        }
+    }, 5000);
+    
+    syncIntervals.set(roomId, intervalId);
+}
+
+// Oda için senkronizasyon interval'ini durdur
+function stopRoomSyncInterval(roomId) {
+    if (syncIntervals.has(roomId)) {
+        clearInterval(syncIntervals.get(roomId));
+        syncIntervals.delete(roomId);
     }
 }
 
@@ -180,11 +189,26 @@ io.on('connection', (socket) => {
             
             io.to(roomId).emit('updateUsers', users);
             socket.emit('updatePlaylist', room.songs);
-            socket.emit('syncState', {
-                currentTime: room.currentTime,
-                isPlaying: room.isPlaying,
-                currentTrack: room.currentTrack
-            });
+            
+            // Eğer şarkı çalıyorsa, çalma süresini güncelle
+            if (room.isPlaying) {
+                const elapsedTime = (Date.now() - room.lastSyncTime) / 1000;
+                const currentTime = room.currentTime + elapsedTime;
+                
+                socket.emit('syncState', {
+                    currentTime: currentTime,
+                    isPlaying: room.isPlaying,
+                    currentTrack: room.currentTrack,
+                    serverTime: Date.now()
+                });
+            } else {
+                socket.emit('syncState', {
+                    currentTime: room.currentTime,
+                    isPlaying: room.isPlaying,
+                    currentTrack: room.currentTrack,
+                    serverTime: Date.now()
+                });
+            }
             
             // Yeni kullanıcı katıldı bildirimi
             io.to(roomId).emit('userJoined', { id: socket.id, name: username });
@@ -193,88 +217,57 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('addSong', async (data, callback) => {
-        console.log(`Şarkı ekleme isteği alındı: ${data.song.name}, Oda: ${data.roomId}`);
-        
-        try {
-            const roomId = data.roomId;
-            const song = data.song;
-            
-            // Oda var mı kontrol et
-            if (!rooms.get(roomId)) {
-                console.error(`Oda bulunamadı: ${roomId}`);
-                if (callback) callback({ success: false, error: 'Oda bulunamadı' });
-                return;
+    socket.on('addSong', ({ roomId, song }) => {
+        const room = rooms.get(roomId);
+        if (room) {
+            // Şarkıya ekleyen kişi bilgisini ekleyelim
+            if (!song.addedBy) {
+                song.addedBy = room.users.get(socket.id) || 'Bilinmeyen Kullanıcı';
             }
             
-            // Şarkıyı ekleyen kullanıcıyı ekle (eğer yoksa)
-            if (!song.addedBy && socket.username) {
-                song.addedBy = socket.username;
-            }
-            
-            // Şarkı ekleme zamanını ekle
-            song.addedAt = Date.now();
-            
-            // Base64 veri formatını kontrol et
-            if (!song.data || typeof song.data !== 'string' || !song.data.startsWith('data:')) {
-                console.error('Geçersiz şarkı verisi formatı');
-                if (callback) callback({ success: false, error: 'Geçersiz şarkı verisi formatı' });
-                return;
-            }
-            
-            // Oda klasörünü oluştur
-            const roomDir = ensureRoomDirectory(roomId);
-            
-            // Dosya adını temizle ve benzersiz yap
-            const cleanFileName = song.name.replace(/[^a-zA-Z0-9_\-\.]/g, '_');
-            const uniqueFileName = `${Date.now()}_${cleanFileName}`;
-            const filePath = path.join(roomDir, uniqueFileName);
-            
-            console.log(`Şarkı dosyası kaydediliyor: ${filePath}`);
-            
-            // Base64 veriyi dosyaya kaydet
-            await saveBase64ToFile(song.data, filePath);
-            
-            // Şarkı nesnesini güncelle - base64 veri yerine dosya yolunu sakla
-            song.data = filePath;
-            delete song.base64Data; // Eğer varsa eski base64 verisini temizle
-            
-            // Şarkıyı çalma listesine ekle
-            rooms.get(roomId).songs.push(song);
-            
-            console.log(`Şarkı başarıyla eklendi: ${song.name}, Toplam şarkı: ${rooms.get(roomId).songs.length}`);
-            
-            // Tüm kullanıcılara güncel çalma listesini gönder
-            io.to(roomId).emit('updatePlaylist', rooms.get(roomId).songs);
-            
-            // Şarkı eklendi bildirimini gönder
-            io.to(roomId).emit('songAdded', {
-                songName: song.name,
-                addedBy: song.addedBy
-            });
-            
-            // İlk şarkı eklendiyse veya hiçbir şarkı çalmıyorsa, sadece çalma listesini güncelle
-            // Otomatik başlatma kaldırıldı
-            if (rooms.get(roomId).songs.length === 1 || rooms.get(roomId).currentTrack === -1) {
-                rooms.get(roomId).currentTrack = 0;
-                // Otomatik çalmayı iptal et, isPlaying false olarak kalsın
-                rooms.get(roomId).isPlaying = false;
+            try {
+                // Base64 veriyi dosyaya kaydet
+                const filePath = saveBase64ToFile(song.data, song.name);
                 
-                // Tüm kullanıcılara şarkı bilgisini gönder ama autoplay false olarak ayarla
-                io.to(roomId).emit('playSong', {
-                    song: rooms.get(roomId).songs[0],
-                    index: 0,
-                    autoplay: false, // Otomatik çalmayı devre dışı bırak
-                    serverTime: Date.now()
+                // Şarkı nesnesini güncelle
+                const songObj = {
+                    name: song.name,
+                    data: filePath, // Artık base64 değil, dosya yolu
+                    addedBy: song.addedBy,
+                    addedAt: Date.now()
+                };
+                
+                // Şarkıyı çalma listesine ekle
+                room.songs.push(songObj);
+                
+                // Tüm kullanıcılara güncel çalma listesini gönder
+                io.to(roomId).emit('updatePlaylist', room.songs);
+                
+                // Yeni şarkı eklendi bildirimi
+                io.to(roomId).emit('songAdded', { 
+                    songName: song.name, 
+                    addedBy: song.addedBy 
                 });
+                
+                console.log(`Şarkı eklendi: ${song.name}, Toplam: ${room.songs.length}`);
+                
+                // Eğer ilk şarkıysa veya hiçbir şarkı çalmıyorsa, şarkıyı hazırla ama otomatik başlatma
+                if (room.songs.length === 1 || !room.isPlaying) {
+                    const index = room.songs.length - 1;
+                    room.currentTrack = index;
+                    // Otomatik çalmayı kaldıralım
+                    room.isPlaying = false; // Şarkı çalmıyor olarak işaretle
+                    room.currentTime = 0;
+                    io.to(roomId).emit('playSong', { 
+                        song: room.songs[index], 
+                        index: index,
+                        autoplay: false // Otomatik çalma kapalı
+                    });
+                }
+            } catch (error) {
+                console.error('Şarkı kaydetme hatası:', error);
+                socket.emit('error', 'Şarkı kaydedilemedi: ' + error.message);
             }
-            
-            // Başarı yanıtı gönder
-            if (callback) callback({ success: true });
-            
-        } catch (error) {
-            console.error('Şarkı eklenirken hata:', error);
-            if (callback) callback({ success: false, error: error.message });
         }
     });
 
@@ -285,6 +278,9 @@ io.on('connection', (socket) => {
             room.currentTime = currentTime;
             room.lastSyncTime = Date.now();
             io.to(roomId).emit('play', currentTime);
+            
+            // Oda için senkronizasyon interval'ini başlat
+            startRoomSyncInterval(roomId);
         }
     });
 
@@ -294,6 +290,9 @@ io.on('connection', (socket) => {
             room.isPlaying = false;
             room.currentTime = currentTime;
             io.to(roomId).emit('pause', currentTime);
+            
+            // Oda için senkronizasyon interval'ini durdur
+            stopRoomSyncInterval(roomId);
         }
     });
 
@@ -310,6 +309,9 @@ io.on('connection', (socket) => {
                 autoplay: true,
                 serverTime: Date.now()
             });
+            
+            // Oda için senkronizasyon interval'ini başlat
+            startRoomSyncInterval(roomId);
         }
     });
 
@@ -363,6 +365,9 @@ io.on('connection', (socket) => {
     socket.on('deleteRoom', ({ roomId }) => {
         const room = rooms.get(roomId);
         if (room) {
+            // Senkronizasyon interval'ini durdur
+            stopRoomSyncInterval(roomId);
+            
             // Odadaki tüm kullanıcılara bildirim gönder
             io.to(roomId).emit('roomDeleted', { 
                 message: 'Oda silindi. Ana sayfaya yönlendiriliyorsunuz...'
@@ -376,19 +381,14 @@ io.on('connection', (socket) => {
                     
                     // Odaya ait şarkıları bul ve sil
                     room.songs.forEach(song => {
-                        if (song.data && song.data.startsWith('/songs/')) {
-                            const songFileName = song.data.split('/').pop(); // /songs/filename.mp3 -> filename.mp3
-                            
-                            files.forEach(file => {
-                                if (file === songFileName) {
-                                    const filePath = path.join(songsDir, file);
-                                    if (fs.existsSync(filePath)) {
-                                        fs.unlinkSync(filePath);
-                                        deletedCount++;
-                                    }
-                                }
-                            });
-                        }
+                        const songFileName = song.data.split('/').pop(); // /songs/filename.mp3 -> filename.mp3
+                        
+                        files.forEach(file => {
+                            if (file === songFileName) {
+                                fs.unlinkSync(path.join(songsDir, file));
+                                deletedCount++;
+                            }
+                        });
                     });
                     
                     console.log(`Oda silindi: ${roomId}, ${deletedCount} şarkı dosyası temizlendi`);
@@ -397,22 +397,8 @@ io.on('connection', (socket) => {
                 console.error('Oda şarkılarını silme hatası:', err);
             }
             
-            // Odadaki tüm kullanıcıları odadan çıkar
-            const socketsInRoom = io.sockets.adapter.rooms.get(roomId);
-            if (socketsInRoom) {
-                for (const socketId of socketsInRoom) {
-                    const clientSocket = io.sockets.sockets.get(socketId);
-                    if (clientSocket) {
-                        clientSocket.leave(roomId);
-                    }
-                }
-            }
-            
             // Odayı sil
             rooms.delete(roomId);
-            console.log(`Oda başarıyla silindi: ${roomId}`);
-        } else {
-            socket.emit('error', 'Oda bulunamadı veya zaten silinmiş');
         }
     });
 
@@ -449,55 +435,14 @@ io.on('connection', (socket) => {
                 io.to(roomId).emit('updateUsers', users);
                 
                 if (room.users.size === 0) {
+                    // Oda boşaldıysa senkronizasyon interval'ini durdur
+                    stopRoomSyncInterval(roomId);
                     rooms.delete(roomId);
                 }
             }
         });
     });
 });
-
-// Sunucu başlatıldığında geçici klasörü temizle
-function cleanupTempDirectory() {
-    if (fs.existsSync(tempDir)) {
-        try {
-            // Tüm oda klasörlerini kontrol et
-            const roomDirs = fs.readdirSync(tempDir);
-            let totalFiles = 0;
-            
-            for (const roomDir of roomDirs) {
-                const fullPath = path.join(tempDir, roomDir);
-                
-                // Klasör mü kontrol et
-                if (fs.statSync(fullPath).isDirectory()) {
-                    // Aktif oda mı kontrol et
-                    if (!rooms.has(roomDir)) {
-                        // Aktif olmayan odanın dosyalarını sil
-                        const files = fs.readdirSync(fullPath);
-                        totalFiles += files.length;
-                        
-                        for (const file of files) {
-                            fs.unlinkSync(path.join(fullPath, file));
-                        }
-                        
-                        // Klasörü sil
-                        fs.rmdirSync(fullPath);
-                        console.log(`Kullanılmayan oda klasörü temizlendi: ${roomDir}`);
-                    }
-                }
-            }
-            
-            console.log(`Geçici klasör temizlendi: ${totalFiles} dosya silindi`);
-        } catch (error) {
-            console.error(`Geçici klasör temizlenirken hata: ${error.message}`);
-        }
-    }
-}
-
-// Sunucu başlatıldığında temizlik yap
-cleanupTempDirectory();
-
-// Periyodik temizlik (her 6 saatte bir)
-setInterval(cleanupTempDirectory, 6 * 60 * 60 * 1000);
 
 const PORT = process.env.PORT || 8080;
 http.listen(PORT, () => {
