@@ -75,13 +75,34 @@
     <div class="container mx-auto px-4 py-8 max-w-4xl">
         <h1 class="text-4xl font-bold text-center mb-8">🎵 Sync Music Player</h1>
 
+        <!-- Oda Linki Bölümü - Her zaman üstte görünecek -->
+        <div id="roomLinkSection" style="display: none;" class="glass-effect rounded-xl p-4 mb-6 sticky top-2 z-10">
+            <div class="flex flex-col md:flex-row items-center justify-between gap-3">
+                <div class="flex-1">
+                    <div class="flex items-center gap-2">
+                        <span class="font-bold whitespace-nowrap">Oda Linki:</span>
+                        <span id="roomLinkText" class="bg-white/10 px-3 py-1 rounded text-indigo-300 truncate"></span>
+                    </div>
+                </div>
+                <div class="flex gap-2 shrink-0">
+                    <button onclick="copyLink()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 flex items-center gap-2">
+                        <i class="fas fa-copy"></i>
+                        <span class="hidden md:inline">Linki Kopyala</span>
+                    </button>
+                    <button onclick="shareLink()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 flex items-center gap-2">
+                        <i class="fas fa-share-alt"></i>
+                        <span class="hidden md:inline">Paylaş</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Oda Oluşturma Bölümü -->
         <div id="createJoinSection" class="glass-effect rounded-xl p-6 mb-6">
             <button onclick="createRoom()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300 flex items-center justify-center gap-2">
                 <i class="fas fa-plus-circle"></i>
                 Yeni Oda Oluştur
             </button>
-            <div id="roomLink" style="display: none;" class="mt-4 p-4 bg-white/10 rounded-lg"></div>
         </div>
 
         <!-- Giriş Bölümü -->
@@ -109,7 +130,7 @@
                 <p class="flex items-center gap-2"><i class="fas fa-info-circle"></i> Odadaki herkes şarkı ekleyebilir ve çalma listesini kontrol edebilir.</p>
             </div>
         </div>
-
+        
         <!-- Müzik Çalar Bölümü -->
         <div id="playerSection" style="display: none;" class="space-y-6">
             <!-- İki sütunlu düzen oluşturalım -->
@@ -210,6 +231,11 @@
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('room')) {
             roomId = urlParams.get('room');
+            const roomLink = `${window.location.origin}?room=${roomId}`;
+            
+            // Oda linkini üstteki bölümde göster
+            document.getElementById('roomLinkText').textContent = roomLink;
+            document.getElementById('roomLinkSection').style.display = 'block';
             document.getElementById('createJoinSection').style.display = 'none';
             document.getElementById('loginSection').style.display = 'block';
         }
@@ -221,24 +247,10 @@
         socket.on('roomCreated', (newRoomId) => {
             roomId = newRoomId;
             const roomLink = `${window.location.origin}?room=${roomId}`;
-            const roomLinkElement = document.getElementById('roomLink');
-            roomLinkElement.innerHTML = `
-                <div class="space-y-3">
-                    <div class="flex items-center gap-2">
-                        <span class="font-bold">Oda ID:</span>
-                        <span class="bg-white/10 px-3 py-1 rounded">${roomId}</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <span class="font-bold">Oda Linki:</span>
-                        <a href="${roomLink}" class="text-indigo-300 hover:text-indigo-400 break-all">${roomLink}</a>
-                    </div>
-                    <button onclick="copyLink()" class="bg-white/10 hover:bg-white/20 text-white font-bold py-2 px-4 rounded-lg transition duration-300 flex items-center gap-2">
-                        <i class="fas fa-copy"></i>
-                        Linki Kopyala
-                    </button>
-                </div>
-            `;
-            roomLinkElement.style.display = 'block';
+            
+            // Oda linkini üstteki bölümde göster
+            document.getElementById('roomLinkText').textContent = roomLink;
+            document.getElementById('roomLinkSection').style.display = 'block';
             document.getElementById('loginSection').style.display = 'block';
         });
 
@@ -301,8 +313,8 @@
 
         function playSong(index) {
             if (index >= 0 && index < currentPlaylist.length) {
-                currentTrack = index;
-                socket.emit('playSong', { roomId, index });
+            currentTrack = index;
+            socket.emit('playSong', { roomId, index });
             }
         }
 
@@ -602,6 +614,28 @@
                 showError('Link kopyalanamadı');
                 console.error('Link kopyalama hatası:', err);
             });
+        }
+        
+        // Link paylaşma fonksiyonu
+        function shareLink() {
+            const roomLink = `${window.location.origin}?room=${roomId}`;
+            
+            if (navigator.share) {
+                navigator.share({
+                    title: 'Sync Music Player - Oda Daveti',
+                    text: 'Benimle müzik dinlemek için bu odaya katıl!',
+                    url: roomLink
+                }).then(() => {
+                    showSuccess('Link paylaşıldı!');
+                }).catch(err => {
+                    console.error('Paylaşım hatası:', err);
+                    // Paylaşım başarısız olursa kopyalama yöntemini dene
+                    copyLink();
+                });
+            } else {
+                // Web Share API desteklenmiyorsa kopyalama yöntemini kullan
+                copyLink();
+            }
         }
 
         // Audio player hata yönetimi
