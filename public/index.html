@@ -272,11 +272,46 @@
 
         socket.on('playSong', (data) => {
             currentTrack = data.index;
-            audioPlayer.src = data.song.data;
-            audioPlayer.play().catch(error => {
-                showError('Şarkı çalınırken hata: ' + error.message);
-            });
-            isPlaying = true;
+            
+            if (data.song.embedMode) {
+                // YouTube embed için iframe kullan
+                const iframe = document.createElement('iframe');
+                iframe.src = data.song.data;
+                iframe.width = '100%';
+                iframe.height = '80px';
+                iframe.frameBorder = '0';
+                iframe.allow = 'autoplay; encrypted-media';
+                
+                // Audio player'ı gizle, iframe'i göster
+                audioPlayer.style.display = 'none';
+                const container = audioPlayer.parentElement;
+                
+                // Varsa önceki iframe'i kaldır
+                const existingIframe = container.querySelector('iframe');
+                if (existingIframe) {
+                    container.removeChild(existingIframe);
+                }
+                
+                container.appendChild(iframe);
+                isPlaying = true;
+            } else {
+                // Normal audio dosyası
+                audioPlayer.style.display = 'block';
+                const container = audioPlayer.parentElement;
+                
+                // Varsa önceki iframe'i kaldır
+                const existingIframe = container.querySelector('iframe');
+                if (existingIframe) {
+                    container.removeChild(existingIframe);
+                }
+                
+                audioPlayer.src = data.song.data;
+                audioPlayer.play().catch(error => {
+                    showError('Şarkı çalınırken hata: ' + error.message);
+                });
+                isPlaying = true;
+            }
+            
             updatePlaylistUI();
             socket.emit('play', { roomId, currentTime: 0 });
         });

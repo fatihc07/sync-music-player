@@ -8,12 +8,13 @@ const io = require('socket.io')(http, {
     },
     maxHttpBufferSize: 1e8 // 100 MB limit
 });
-const ytdl = require('ytdl-core');
+const youtubedl = require('youtube-dl-exec');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const axios = require('axios');
 
 // FFmpeg yolunu ayarla
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
@@ -32,59 +33,53 @@ app.get('/', (req, res) => {
 
 const rooms = new Map();
 
-// YouTube linkini işleyen fonksiyon
+// YouTube API anahtarı (Google Cloud Console'dan alınmalı)
+const YOUTUBE_API_KEY = 'YOUR_API_KEY';
+
+// YouTube linkini işleyen fonksiyonu güncelleyelim
 async function processYoutubeLink(url) {
     try {
-        // Video bilgilerini al
-        const info = await ytdl.getInfo(url);
-        const title = info.videoDetails.title;
-        const videoId = info.videoDetails.videoId;
-        
-        // Geçici dosya yolları
-        const tempFilePath = path.join(tempDir, `${videoId}.mp3`);
-        
-        // Eğer dosya zaten varsa, doğrudan döndür
-        if (fs.existsSync(tempFilePath)) {
-            const data = fs.readFileSync(tempFilePath, { encoding: 'base64' });
-            return {
-                name: title,
-                data: `data:audio/mp3;base64,${data}`,
-                source: 'youtube',
-                videoId: videoId
-            };
+        // Video ID'sini çıkar
+        const videoId = extractVideoId(url);
+        if (!videoId) {
+            throw new Error('Geçersiz YouTube URL');
         }
         
-        // YouTube'dan ses akışını al
-        const stream = ytdl(url, { 
-            quality: 'highestaudio',
-            filter: 'audioonly'
+        // Video bilgilerini al
+        const response = await axios.get(`https://www.googleapis.com/youtube/v3/videos`, {
+            params: {
+                part: 'snippet',
+                id: videoId,
+                key: YOUTUBE_API_KEY
+            }
         });
         
-        // MP3'e dönüştür
-        return new Promise((resolve, reject) => {
-            ffmpeg(stream)
-                .audioBitrate(128)
-                .format('mp3')
-                .on('error', (err) => {
-                    console.error('FFmpeg error:', err);
-                    reject(err);
-                })
-                .on('end', () => {
-                    // Dosyayı base64'e dönüştür
-                    const data = fs.readFileSync(tempFilePath, { encoding: 'base64' });
-                    resolve({
-                        name: title,
-                        data: `data:audio/mp3;base64,${data}`,
-                        source: 'youtube',
-                        videoId: videoId
-                    });
-                })
-                .save(tempFilePath);
-        });
+        if (!response.data.items || response.data.items.length === 0) {
+            throw new Error('Video bulunamadı');
+        }
+        
+        const videoInfo = response.data.items[0].snippet;
+        const title = videoInfo.title;
+        
+        // Doğrudan YouTube embed URL'sini kullan
+        return {
+            name: title,
+            data: `https://www.youtube.com/embed/${videoId}?autoplay=1`,
+            source: 'youtube',
+            videoId: videoId,
+            embedMode: true
+        };
     } catch (error) {
         console.error('YouTube processing error:', error);
         throw error;
     }
+}
+
+// YouTube video ID'sini çıkaran yardımcı fonksiyon
+function extractVideoId(url) {
+    const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[7].length === 11) ? match[7] : null;
 }
 
 io.on('connection', (socket) => {
