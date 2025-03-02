@@ -58,6 +58,16 @@
         .playlist-scroll {
             flex-grow: 1;
             overflow-y: auto;
+            max-height: 400px; /* Sabit bir yükseklik ekleyelim */
+        }
+        
+        /* Çalma listesi öğeleri arasındaki boşluk */
+        #playlist > li {
+            margin-bottom: 8px;
+        }
+        
+        #playlist > li:last-child {
+            margin-bottom: 0;
         }
     </style>
 </head>
@@ -142,14 +152,14 @@
                                 Çalma Listesi
                             </span>
                             <span class="text-sm font-normal bg-white/10 px-3 py-1 rounded-lg">
-                                Herkes şarkı ekleyebilir
+                                <span id="songCount">0</span> Şarkı
                             </span>
                         </h3>
                         <p class="text-sm text-white/70 mb-3">
                             <i class="fas fa-arrows-alt mr-1"></i> Şarkıları sürükleyip bırakarak sıralamayı değiştirebilirsiniz
                         </p>
                         <div class="playlist-scroll">
-                            <ul id="playlist" class="space-y-2"></ul>
+                            <ul id="playlist" class="divide-y divide-white/10"></ul>
                         </div>
                     </div>
                 </div>
@@ -159,7 +169,30 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.3.2/socket.io.js"></script>
     <script>
-        const socket = io(window.location.origin);
+        // Socket.IO bağlantısı
+        const socket = io(window.location.origin, {
+            reconnectionAttempts: 5,
+            timeout: 10000
+        });
+        
+        // Bağlantı durumunu izle
+        socket.on('connect', () => {
+            console.log('Socket.IO bağlantısı kuruldu');
+        });
+        
+        socket.on('connect_error', (error) => {
+            console.error('Socket.IO bağlantı hatası:', error);
+            showError('Sunucu bağlantısında sorun oluştu. Sayfa yenilenecek...');
+            setTimeout(() => {
+                window.location.reload();
+            }, 3000);
+        });
+        
+        socket.on('disconnect', (reason) => {
+            console.warn('Socket.IO bağlantısı kesildi:', reason);
+            showError('Sunucu bağlantısı kesildi. Yeniden bağlanılıyor...');
+        });
+
         let username = '';
         let currentTrack = 0;
         let roomId = '';
@@ -225,6 +258,12 @@
             let filesAdded = 0;
             const totalFiles = files.length;
             
+            if (totalFiles === 0) {
+                return;
+            }
+            
+            showSuccess(`${totalFiles} şarkı yükleniyor...`);
+            
             for (let file of files) {
                 if (file.size > 50 * 1024 * 1024) {
                     showError(`${file.name} dosyası çok büyük (Max: 50MB)`);
@@ -270,6 +309,9 @@
         socket.on('updatePlaylist', (songs) => {
             currentPlaylist = songs;
             updatePlaylistUI();
+            
+            // Şarkı sayısını güncelle
+            document.getElementById('songCount').textContent = songs.length;
             
             // Eğer hiç şarkı çalmıyorsa ve yeni şarkı eklendiyse ilk şarkıyı çal
             if (!isPlaying && songs.length > 0 && audioPlayer.paused) {
@@ -332,6 +374,21 @@
         // Çalma listesi UI'ını güncelleyen fonksiyon
         function updatePlaylistUI() {
             playlist.innerHTML = '';
+            
+            // Çalma listesi boşsa bir mesaj göster
+            if (currentPlaylist.length === 0) {
+                const emptyMessage = document.createElement('li');
+                emptyMessage.className = 'p-4 text-center text-white/50';
+                emptyMessage.innerHTML = '<i class="fas fa-music mr-2"></i> Henüz şarkı eklenmemiş';
+                playlist.appendChild(emptyMessage);
+                document.getElementById('songCount').textContent = '0';
+                return;
+            }
+            
+            // Şarkı sayısını güncelle
+            document.getElementById('songCount').textContent = currentPlaylist.length;
+            
+            // Her şarkı için bir liste öğesi oluştur
             currentPlaylist.forEach((song, index) => {
                 const li = document.createElement('li');
                 li.className = `playlist-item p-3 rounded-lg flex items-center gap-2 ${
@@ -418,6 +475,9 @@
                 
                 playlist.appendChild(li);
             });
+            
+            // Debug için konsola yazdır
+            console.log(`Çalma listesi güncellendi: ${currentPlaylist.length} şarkı`);
             
             // Sortable.js ile sürükle-bırak özelliğini etkinleştirelim
             if (currentPlaylist.length > 1) {

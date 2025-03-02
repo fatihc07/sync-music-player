@@ -74,7 +74,10 @@ io.on('connection', (socket) => {
                 song.addedBy = room.users.get(socket.id) || 'Bilinmeyen Kullanıcı';
             }
             
+            // Şarkıyı çalma listesine ekle
             room.songs.push(song);
+            
+            // Tüm kullanıcılara güncel çalma listesini gönder
             io.to(roomId).emit('updatePlaylist', room.songs);
             
             // Yeni şarkı eklendi bildirimi
@@ -82,6 +85,8 @@ io.on('connection', (socket) => {
                 songName: song.name, 
                 addedBy: song.addedBy 
             });
+            
+            console.log(`Şarkı eklendi: ${song.name}, Toplam: ${room.songs.length}`);
             
             // Eğer ilk şarkıysa veya hiçbir şarkı çalmıyorsa otomatik başlat
             if (room.songs.length === 1 || !room.isPlaying) {
