@@ -151,8 +151,8 @@ function startRoomSyncInterval(roomId) {
         clearInterval(syncIntervals.get(roomId));
     }
     
-    // Her 3 saniyede bir odadaki tüm kullanıcılara senkronizasyon bilgisi gönder
-    // (5 saniyeden 3 saniyeye düşürdük)
+    // Her 2 saniyede bir odadaki tüm kullanıcılara senkronizasyon bilgisi gönder
+    // (3 saniyeden 2 saniyeye düşürdük)
     const intervalId = setInterval(() => {
         const room = rooms.get(roomId);
         if (room && room.isPlaying) {
@@ -168,9 +168,9 @@ function startRoomSyncInterval(roomId) {
                 isPlaying: room.isPlaying
             });
             
-            console.log(`Oda ${roomId} için senkronizasyon gönderildi: ${syncedTime.toFixed(2)}s`);
+            console.log(`Oda ${roomId} için senkronizasyon gönderildi: ${syncedTime.toFixed(2)}s, şarkı: ${room.currentTrack}`);
         }
-    }, 3000); // 3 saniyede bir senkronize et
+    }, 2000); // 2 saniyede bir senkronize et
     
     syncIntervals.set(roomId, intervalId);
 }
@@ -309,10 +309,11 @@ io.on('connection', (socket) => {
             // Tüm kullanıcılara çalma durumunu bildir
             io.to(roomId).emit('play', {
                 currentTime: currentTime,
-                serverTime: Date.now()
+                serverTime: Date.now(),
+                currentTrack: room.currentTrack // Şarkı indeksini de gönder
             });
             
-            console.log(`Oda ${roomId}: Şarkı çalınıyor, süre: ${currentTime.toFixed(2)}s`);
+            console.log(`Oda ${roomId}: Şarkı çalınıyor, süre: ${currentTime.toFixed(2)}s, şarkı: ${room.currentTrack}`);
             
             // Oda için senkronizasyon interval'ini başlat
             startRoomSyncInterval(roomId);
@@ -328,10 +329,11 @@ io.on('connection', (socket) => {
             // Tüm kullanıcılara duraklatma durumunu bildir
             io.to(roomId).emit('pause', {
                 currentTime: currentTime,
-                serverTime: Date.now()
+                serverTime: Date.now(),
+                currentTrack: room.currentTrack // Şarkı indeksini de gönder
             });
             
-            console.log(`Oda ${roomId}: Şarkı duraklatıldı, süre: ${currentTime.toFixed(2)}s`);
+            console.log(`Oda ${roomId}: Şarkı duraklatıldı, süre: ${currentTime.toFixed(2)}s, şarkı: ${room.currentTrack}`);
             
             // Oda için senkronizasyon interval'ini durdur
             stopRoomSyncInterval(roomId);
@@ -467,16 +469,20 @@ io.on('connection', (socket) => {
     // Yeni: Periyodik senkronizasyon için event handler ekle
     socket.on('requestSync', ({ roomId }) => {
         const room = rooms.get(roomId);
-        if (room && room.isPlaying) {
+        if (room) {
             // Çalma süresi hesapla (son senkronizasyondan bu yana geçen süre)
-            const elapsedTime = (Date.now() - room.lastSyncTime) / 1000;
+            const elapsedTime = room.isPlaying ? (Date.now() - room.lastSyncTime) / 1000 : 0;
             const syncedTime = room.currentTime + elapsedTime;
             
             // Sadece istek yapan kullanıcıya senkronizasyon bilgisi gönder
             socket.emit('syncPlayback', {
                 currentTime: syncedTime,
-                serverTime: Date.now()
+                serverTime: Date.now(),
+                currentTrack: room.currentTrack,
+                isPlaying: room.isPlaying
             });
+            
+            console.log(`Oda ${roomId} için senkronizasyon isteği yanıtlandı: ${syncedTime.toFixed(2)}s, şarkı: ${room.currentTrack}, çalıyor: ${room.isPlaying}`);
         }
     });
 
