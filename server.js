@@ -294,6 +294,44 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Oda silme işlemi
+    socket.on('deleteRoom', ({ roomId }) => {
+        const room = rooms.get(roomId);
+        if (room) {
+            // Odadaki tüm kullanıcılara bildirim gönder
+            io.to(roomId).emit('roomDeleted', { 
+                message: 'Oda silindi. Ana sayfaya yönlendiriliyorsunuz...'
+            });
+            
+            // Odaya ait şarkı dosyalarını temizle
+            try {
+                if (fs.existsSync(songsDir)) {
+                    const files = fs.readdirSync(songsDir);
+                    let deletedCount = 0;
+                    
+                    // Odaya ait şarkıları bul ve sil
+                    room.songs.forEach(song => {
+                        const songFileName = song.data.split('/').pop(); // /songs/filename.mp3 -> filename.mp3
+                        
+                        files.forEach(file => {
+                            if (file === songFileName) {
+                                fs.unlinkSync(path.join(songsDir, file));
+                                deletedCount++;
+                            }
+                        });
+                    });
+                    
+                    console.log(`Oda silindi: ${roomId}, ${deletedCount} şarkı dosyası temizlendi`);
+                }
+            } catch (err) {
+                console.error('Oda şarkılarını silme hatası:', err);
+            }
+            
+            // Odayı sil
+            rooms.delete(roomId);
+        }
+    });
+
     socket.on('disconnect', () => {
         rooms.forEach((room, roomId) => {
             if (room.users.has(socket.id)) {

@@ -93,6 +93,10 @@
                         <i class="fas fa-share-alt"></i>
                         <span class="hidden md:inline">Paylaş</span>
                     </button>
+                    <button onclick="confirmDeleteRoom()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 flex items-center gap-2">
+                        <i class="fas fa-trash-alt"></i>
+                        <span class="hidden md:inline">Odayı Sil</span>
+                    </button>
                 </div>
             </div>
         </div>
@@ -250,6 +254,32 @@
             // Oturum bilgisini kontrol et
             checkSavedSession();
         }
+        
+        // Oda silme onay fonksiyonu
+        function confirmDeleteRoom() {
+            if (confirm('Bu odayı silmek istediğinize emin misiniz? Bu işlem geri alınamaz ve tüm şarkılar silinecektir.')) {
+                deleteRoom();
+            }
+        }
+        
+        // Oda silme fonksiyonu
+        function deleteRoom() {
+            socket.emit('deleteRoom', { roomId });
+            showSuccess('Oda silme isteği gönderildi...');
+        }
+        
+        // Oda silindiğinde
+        socket.on('roomDeleted', (data) => {
+            showError(data.message);
+            
+            // Oturum bilgisini temizle
+            localStorage.removeItem('musicRoomSession');
+            
+            // 3 saniye sonra ana sayfaya yönlendir
+            setTimeout(() => {
+                window.location.href = window.location.origin;
+            }, 3000);
+        });
         
         // Oturum bilgisini localStorage'a kaydet
         function saveSession() {
