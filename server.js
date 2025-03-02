@@ -11,6 +11,7 @@ const io = require('socket.io')(http, {
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 
 // Geçici dosyalar için klasör
 const tempDir = path.join(os.tmpdir(), 'sync-music-player');
@@ -18,13 +19,108 @@ if (!fs.existsSync(tempDir)) {
     fs.mkdirSync(tempDir, { recursive: true });
 }
 
+// Şarkılar için klasör
+const songsDir = path.join(__dirname, 'songs');
+if (!fs.existsSync(songsDir)) {
+    fs.mkdirSync(songsDir, { recursive: true });
+}
+
+// Sunucu kapanırken şarkıları temizle
+process.on('SIGINT', cleanupSongs);
+process.on('SIGTERM', cleanupSongs);
+
+function cleanupSongs() {
+    console.log('Şarkı dosyaları temizleniyor...');
+    try {
+        if (fs.existsSync(songsDir)) {
+            const files = fs.readdirSync(songsDir);
+            for (const file of files) {
+                fs.unlinkSync(path.join(songsDir, file));
+            }
+            console.log(`${files.length} şarkı dosyası temizlendi`);
+        }
+    } catch (err) {
+        console.error('Şarkı temizleme hatası:', err);
+    }
+    process.exit(0);
+}
+
+// Şarkıları periyodik olarak temizle (24 saatte bir)
+setInterval(() => {
+    try {
+        if (fs.existsSync(songsDir)) {
+            const files = fs.readdirSync(songsDir);
+            const now = Date.now();
+            let deletedCount = 0;
+            
+            for (const file of files) {
+                const filePath = path.join(songsDir, file);
+                const stats = fs.statSync(filePath);
+                const fileAge = now - stats.mtimeMs;
+                
+                // 24 saatten eski dosyaları sil
+                if (fileAge > 24 * 60 * 60 * 1000) {
+                    fs.unlinkSync(filePath);
+                    deletedCount++;
+                }
+            }
+            
+            if (deletedCount > 0) {
+                console.log(`${deletedCount} eski şarkı dosyası temizlendi`);
+            }
+        }
+    } catch (err) {
+        console.error('Periyodik temizleme hatası:', err);
+    }
+}, 60 * 60 * 1000); // Her saat kontrol et
+
 app.use(express.static('public'));
+app.use('/songs', express.static(songsDir));
+
+// Sunucu başlatıldığında songs klasörünü temizle
+console.log('Başlangıçta şarkı klasörü temizleniyor...');
+try {
+    if (fs.existsSync(songsDir)) {
+        const files = fs.readdirSync(songsDir);
+        for (const file of files) {
+            fs.unlinkSync(path.join(songsDir, file));
+        }
+        console.log(`${files.length} şarkı dosyası temizlendi`);
+    }
+} catch (err) {
+    console.error('Başlangıç temizleme hatası:', err);
+}
 
 app.get('/', (req, res) => {
     res.sendFile(__dirname + '/public/index.html');
 });
 
 const rooms = new Map();
+
+// Base64 veriyi dosyaya kaydet ve dosya yolunu döndür
+function saveBase64ToFile(base64Data, fileName) {
+    // Dosya adını güvenli hale getir
+    const safeFileName = fileName.replace(/[^a-zA-Z0-9.]/g, '_');
+    
+    // Benzersiz bir dosya adı oluştur
+    const uniqueId = crypto.randomBytes(8).toString('hex');
+    const fileExt = path.extname(safeFileName);
+    const baseName = path.basename(safeFileName, fileExt);
+    const uniqueFileName = `${baseName}_${uniqueId}${fileExt}`;
+    
+    const filePath = path.join(songsDir, uniqueFileName);
+    
+    // Base64 veriyi ayır (data:audio/mp3;base64,...)
+    const matches = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    
+    if (matches && matches.length === 3) {
+        const buffer = Buffer.from(matches[2], 'base64');
+        fs.writeFileSync(filePath, buffer);
+        return `/songs/${uniqueFileName}`;
+    } else {
+        throw new Error('Geçersiz base64 veri formatı');
+    }
+}
 
 io.on('connection', (socket) => {
     socket.on('createRoom', () => {
@@ -74,30 +170,46 @@ io.on('connection', (socket) => {
                 song.addedBy = room.users.get(socket.id) || 'Bilinmeyen Kullanıcı';
             }
             
-            // Şarkıyı çalma listesine ekle
-            room.songs.push(song);
-            
-            // Tüm kullanıcılara güncel çalma listesini gönder
-            io.to(roomId).emit('updatePlaylist', room.songs);
-            
-            // Yeni şarkı eklendi bildirimi
-            io.to(roomId).emit('songAdded', { 
-                songName: song.name, 
-                addedBy: song.addedBy 
-            });
-            
-            console.log(`Şarkı eklendi: ${song.name}, Toplam: ${room.songs.length}`);
-            
-            // Eğer ilk şarkıysa veya hiçbir şarkı çalmıyorsa otomatik başlat
-            if (room.songs.length === 1 || !room.isPlaying) {
-                const index = room.songs.length - 1;
-                room.currentTrack = index;
-                room.isPlaying = true;
-                room.currentTime = 0;
-                io.to(roomId).emit('playSong', { 
-                    song: room.songs[index], 
-                    index: index 
+            try {
+                // Base64 veriyi dosyaya kaydet
+                const filePath = saveBase64ToFile(song.data, song.name);
+                
+                // Şarkı nesnesini güncelle
+                const songObj = {
+                    name: song.name,
+                    data: filePath, // Artık base64 değil, dosya yolu
+                    addedBy: song.addedBy,
+                    addedAt: Date.now()
+                };
+                
+                // Şarkıyı çalma listesine ekle
+                room.songs.push(songObj);
+                
+                // Tüm kullanıcılara güncel çalma listesini gönder
+                io.to(roomId).emit('updatePlaylist', room.songs);
+                
+                // Yeni şarkı eklendi bildirimi
+                io.to(roomId).emit('songAdded', { 
+                    songName: song.name, 
+                    addedBy: song.addedBy 
                 });
+                
+                console.log(`Şarkı eklendi: ${song.name}, Toplam: ${room.songs.length}`);
+                
+                // Eğer ilk şarkıysa veya hiçbir şarkı çalmıyorsa otomatik başlat
+                if (room.songs.length === 1 || !room.isPlaying) {
+                    const index = room.songs.length - 1;
+                    room.currentTrack = index;
+                    room.isPlaying = true;
+                    room.currentTime = 0;
+                    io.to(roomId).emit('playSong', { 
+                        song: room.songs[index], 
+                        index: index 
+                    });
+                }
+            } catch (error) {
+                console.error('Şarkı kaydetme hatası:', error);
+                socket.emit('error', 'Şarkı kaydedilemedi: ' + error.message);
             }
         }
     });

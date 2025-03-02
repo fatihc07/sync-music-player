@@ -340,6 +340,9 @@
             
             // URL'yi güncelle (sayfa yenilenmeden)
             window.history.pushState({}, '', `?room=${roomId}`);
+            
+            // Oda oluşturulduğunda createJoinSection'ı gizle
+            document.getElementById('createJoinSection').style.display = 'none';
         });
 
         function login() {
@@ -385,6 +388,8 @@
 
                     if (filesAdded === totalFiles) {
                         showSuccess(`${totalFiles} şarkı başarıyla eklendi`);
+                        // Dosya seçiciyi sıfırla
+                        document.getElementById('localFile').value = '';
                     }
                 };
                 reader.onerror = function() {
@@ -450,6 +455,7 @@
                 container.removeChild(existingIframe);
             }
             
+            // Şarkı verisi artık bir URL olduğu için doğrudan atayabiliriz
             audioPlayer.src = data.song.data;
             audioPlayer.play().catch(error => {
                 showError('Şarkı çalınırken hata: ' + error.message);
@@ -518,7 +524,17 @@
                 const nameSpan = document.createElement('div');
                 nameSpan.className = 'font-medium flex items-center truncate';
                 nameSpan.title = song.name; // Tam adı tooltip olarak göster
-                nameSpan.textContent = song.name;
+                
+                // Şarkı adını göster ve ekleme zamanını ekle
+                const songName = song.name.replace(/\.[^/.]+$/, ""); // Uzantıyı kaldır
+                nameSpan.textContent = songName;
+                
+                // Ekleme zamanını göster
+                if (song.addedAt) {
+                    const addedDate = new Date(song.addedAt);
+                    const timeString = addedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    nameSpan.innerHTML += ` <span class="text-xs text-white/50">${timeString}</span>`;
+                }
                 
                 nameContainer.appendChild(nameSpan);
                 
