@@ -200,11 +200,13 @@ io.on('connection', (socket) => {
                 if (room.songs.length === 1 || !room.isPlaying) {
                     const index = room.songs.length - 1;
                     room.currentTrack = index;
-                    room.isPlaying = true;
+                    // Otomatik çalmayı kaldıralım
+                    // room.isPlaying = true;
                     room.currentTime = 0;
                     io.to(roomId).emit('playSong', { 
                         song: room.songs[index], 
-                        index: index 
+                        index: index,
+                        autoplay: false // Otomatik çalma kapalı
                     });
                 }
             } catch (error) {
@@ -236,11 +238,12 @@ io.on('connection', (socket) => {
         const room = rooms.get(roomId);
         if (room && room.songs[index]) {
             room.currentTrack = index;
-            room.isPlaying = true;
+            room.isPlaying = true; // Play butonuna basıldığında çalma durumunu true yap
             room.currentTime = 0;
             io.to(roomId).emit('playSong', { 
                 song: room.songs[index], 
-                index: index 
+                index: index,
+                autoplay: true // Play butonuna basıldığında otomatik çalma açık
             });
         }
     });

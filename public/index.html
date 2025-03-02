@@ -421,10 +421,11 @@
             // Şarkı sayısını güncelle
             document.getElementById('songCount').textContent = songs.length;
             
+            // Otomatik çalmayı kaldıralım
             // Eğer hiç şarkı çalmıyorsa ve yeni şarkı eklendiyse ilk şarkıyı çal
-            if (!isPlaying && songs.length > 0 && audioPlayer.paused) {
-                playSong(songs.length - 1); // Son eklenen şarkıyı çal
-            }
+            // if (!isPlaying && songs.length > 0 && audioPlayer.paused) {
+            //     playSong(songs.length - 1); // Son eklenen şarkıyı çal
+            // }
         });
 
         socket.on('play', (currentTime) => {
@@ -457,13 +458,24 @@
             
             // Şarkı verisi artık bir URL olduğu için doğrudan atayabiliriz
             audioPlayer.src = data.song.data;
-            audioPlayer.play().catch(error => {
-                showError('Şarkı çalınırken hata: ' + error.message);
-            });
-            isPlaying = true;
+            
+            // Otomatik çalma parametresine göre çal veya çalma
+            if (data.autoplay) {
+                audioPlayer.play().catch(error => {
+                    showError('Şarkı çalınırken hata: ' + error.message);
+                });
+                isPlaying = true;
+            } else {
+                audioPlayer.pause();
+                isPlaying = false;
+            }
             
             updatePlaylistUI();
-            socket.emit('play', { roomId, currentTime: 0 });
+            
+            // Otomatik çalma durumuna göre play eventi gönder veya gönderme
+            if (data.autoplay) {
+                socket.emit('play', { roomId, currentTime: 0 });
+            }
         });
 
         socket.on('syncState', (state) => {
