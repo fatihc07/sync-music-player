@@ -14,8 +14,8 @@
             font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             margin: 0;
             padding: 0;
-            background: #121212;
-            color: #fff;
+            background: #ffffff;
+            color: #333;
             overflow-x: hidden;
         }
 
@@ -26,19 +26,19 @@
         }
 
         .header {
-            background-color: #121212;
-            color: white;
+            background-color: #ffffff;
+            color: #333;
             padding: 10px 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-bottom: 1px solid #333;
+            border-bottom: 1px solid #eaeaea;
         }
 
         .logo {
             font-size: 24px;
             font-weight: bold;
-            color: #fff;
+            color: #333;
         }
 
         .user-info {
@@ -51,7 +51,8 @@
             width: 32px;
             height: 32px;
             border-radius: 50%;
-            background-color: #555;
+            background-color: #4f46e5;
+            color: white;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -61,22 +62,27 @@
         .main-content {
             display: flex;
             height: calc(100vh - 60px);
+            background-color: #ffffff;
         }
 
         .player-section {
             width: 40%;
-            background-color: #181818;
+            background-color: #1e1e1e;
             padding: 30px;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
             position: relative;
             overflow: hidden;
+            color: #fff;
+            border-radius: 20px;
+            margin: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
         }
 
         .playlist-section {
             width: 60%;
-            background-color: #121212;
+            background-color: #ffffff;
             padding: 20px 30px;
             overflow-y: auto;
         }
@@ -94,7 +100,7 @@
             margin-bottom: 20px;
             border-radius: 8px;
             overflow: hidden;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
             position: relative;
         }
 
@@ -113,6 +119,7 @@
             font-size: 24px;
             font-weight: bold;
             margin-bottom: 5px;
+            color: #fff;
         }
 
         .song-artist {
@@ -131,7 +138,7 @@
         }
 
         .visualizer-bar {
-            background: linear-gradient(to top, #1DB954, #1ed760);
+            background: linear-gradient(to top, #4f46e5, #6366f1);
             width: 4px;
             height: 5px;
             border-radius: 2px;
@@ -163,7 +170,7 @@
         }
 
         .progress-bar:hover {
-            background-color: #1DB954;
+            background-color: #4f46e5;
         }
 
         .time-info {
@@ -204,7 +211,7 @@
 
         .control-button.play-pause {
             background-color: #fff;
-            color: #000;
+            color: #1e1e1e;
             width: 56px;
             height: 56px;
             font-size: 24px;
@@ -247,12 +254,13 @@
             align-items: center;
             margin-bottom: 20px;
             padding-bottom: 10px;
-            border-bottom: 1px solid #333;
+            border-bottom: 1px solid #eaeaea;
         }
 
         .playlist-title {
             font-size: 24px;
             font-weight: bold;
+            color: #333;
         }
 
         .playlist-actions {
@@ -263,7 +271,7 @@
         .playlist-action {
             background: none;
             border: none;
-            color: #b3b3b3;
+            color: #666;
             cursor: pointer;
             font-size: 14px;
             display: flex;
@@ -275,8 +283,8 @@
         }
 
         .playlist-action:hover {
-            color: #fff;
-            background-color: #333;
+            color: #333;
+            background-color: #f0f0f0;
         }
 
         .playlist-item {
@@ -286,25 +294,26 @@
             border-radius: 4px;
             cursor: pointer;
             transition: background-color 0.2s;
+            margin-bottom: 5px;
         }
 
         .playlist-item:hover {
-            background-color: #2a2a2a;
+            background-color: #f5f5f5;
         }
 
         .playlist-item.active {
-            background-color: #333;
+            background-color: #f0f0f0;
         }
 
         .playlist-item-number {
             width: 30px;
             text-align: center;
             font-size: 14px;
-            color: #b3b3b3;
+            color: #666;
         }
 
         .playlist-item.active .playlist-item-number {
-            color: #1DB954;
+            color: #4f46e5;
         }
 
         .playlist-item-info {
@@ -315,21 +324,22 @@
         .playlist-item-title {
             font-size: 16px;
             margin-bottom: 4px;
+            color: #333;
         }
 
         .playlist-item-artist {
             font-size: 14px;
-            color: #b3b3b3;
+            color: #666;
         }
 
         .playlist-item-duration {
             font-size: 14px;
-            color: #b3b3b3;
+            color: #666;
             margin-right: 10px;
         }
 
         .room-info {
-            background-color: #181818;
+            background-color: #f5f5f5;
             padding: 15px;
             border-radius: 8px;
             margin-bottom: 20px;
@@ -338,6 +348,7 @@
         .room-title {
             font-size: 18px;
             font-weight: bold;
+            color: #333;
             margin-bottom: 10px;
         }
 
@@ -349,13 +360,14 @@
         }
 
         .room-user {
-            background-color: #333;
+            background-color: #eaeaea;
             padding: 5px 10px;
             border-radius: 15px;
             font-size: 14px;
             display: flex;
             align-items: center;
             gap: 5px;
+            color: #333;
         }
 
         .room-actions {
@@ -365,7 +377,7 @@
         }
 
         .room-action {
-            background-color: #333;
+            background-color: #4f46e5;
             border: none;
             color: #fff;
             padding: 8px 15px;
@@ -375,15 +387,15 @@
         }
 
         .room-action:hover {
-            background-color: #444;
+            background-color: #4338ca;
         }
 
         .room-action.danger {
-            background-color: #e91e63;
+            background-color: #ef4444;
         }
 
         .room-action.danger:hover {
-            background-color: #f05379;
+            background-color: #dc2626;
         }
 
         .upload-progress-container {
@@ -393,20 +405,20 @@
 
         .upload-progress-text {
             font-size: 14px;
-            color: #b3b3b3;
+            color: #666;
             margin-bottom: 5px;
         }
 
         .upload-progress-bar-container {
             width: 100%;
             height: 4px;
-            background-color: #5e5e5e;
+            background-color: #eaeaea;
             border-radius: 2px;
         }
 
         .upload-progress-bar {
             height: 100%;
-            background-color: #1DB954;
+            background-color: #4f46e5;
             border-radius: 2px;
             width: 0%;
             transition: width 0.3s ease;
