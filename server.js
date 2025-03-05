@@ -351,10 +351,19 @@ io.on('connection', (socket) => {
                 currentTrack: room.currentTrack // Şarkı indeksini de gönder
             });
             
-            console.log(`Oda ${roomId}: Şarkı çalınıyor, süre: ${currentTime.toFixed(2)}s, şarkı: ${room.currentTrack}`);
+            console.log(`Oda ${roomId}: Şarkı çalınıyor, süre: ${currentTime.toFixed(2)}s, şarkı: ${room.currentTrack}, kullanıcı: ${socket.id}`);
             
             // Oda için senkronizasyon interval'ini başlat
             startRoomSyncInterval(roomId);
+            
+            // Kullanıcı adını al
+            const username = room.users.get(socket.id) || 'Bilinmeyen Kullanıcı';
+            
+            // Şarkı çalma bildirimi gönder (kim tarafından başlatıldığı bilgisiyle)
+            io.to(roomId).emit('notification', {
+                message: `${username} şarkıyı başlattı`,
+                type: 'info'
+            });
         }
     });
 
@@ -371,10 +380,19 @@ io.on('connection', (socket) => {
                 currentTrack: room.currentTrack // Şarkı indeksini de gönder
             });
             
-            console.log(`Oda ${roomId}: Şarkı duraklatıldı, süre: ${currentTime.toFixed(2)}s, şarkı: ${room.currentTrack}`);
+            console.log(`Oda ${roomId}: Şarkı duraklatıldı, süre: ${currentTime.toFixed(2)}s, şarkı: ${room.currentTrack}, kullanıcı: ${socket.id}`);
             
             // Oda için senkronizasyon interval'ini durdur
             stopRoomSyncInterval(roomId);
+            
+            // Kullanıcı adını al
+            const username = room.users.get(socket.id) || 'Bilinmeyen Kullanıcı';
+            
+            // Şarkı duraklatma bildirimi gönder (kim tarafından duraklatıldığı bilgisiyle)
+            io.to(roomId).emit('notification', {
+                message: `${username} şarkıyı duraklattı`,
+                type: 'info'
+            });
         }
     });
 

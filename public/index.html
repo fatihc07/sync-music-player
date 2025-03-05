@@ -804,54 +804,54 @@
             }
         });
 
+        // Şarkıyı çal
         function playAudio() {
-            if (!roomId) return;
-            
             if (!isAudioLoaded) {
-                console.log('Şarkı henüz yüklenmemiş, çalma işlemi erteleniyor...');
+                console.log('Şarkı henüz yüklenmemiş, yükleniyor...');
                 pendingPlayRequest = true;
+                loadAudio();
                 return;
             }
             
-            userInitiatedPlay = true;
+            if (isPlayInProgress) {
+                console.log('Şarkı zaten çalma işlemi devam ediyor, tekrar denenmeyecek');
+                return;
+            }
             
-            safePlay().then(() => {
-                // Sunucuya çalma durumunu bildir
-                socket.emit('play', {
-                    roomId: roomId,
-                    currentTime: audioPlayer.currentTime
+            isPlayInProgress = true;
+            
+            // Şarkı çalma durumunu sunucuya bildir
+            if (roomId) {
+                socket.emit('play', { 
+                    roomId, 
+                    currentTime: audioPlayer.currentTime 
                 });
-                
-                // Son senkronizasyon zamanını kaydet
-                lastSyncTime = Date.now();
-                
-                // Senkronizasyon interval'ini başlat
-                startSyncInterval();
-                
-                // UI'ı güncelle
-                updatePlaybackControls();
-            }).catch(error => {
-                console.error('Kullanıcı tarafından başlatılan çalma hatası:', error);
-            });
+                console.log('Sunucuya şarkı çalma bildirimi gönderildi:', audioPlayer.currentTime);
+            }
+            
+            // Şarkıyı çal
+            safePlay();
         }
         
-        // Duraklat düğmesine tıklandığında
+        // Şarkıyı duraklat
         function pauseAudio() {
-            if (!roomId) return;
+            if (isPlayInProgress) {
+                console.log('Şarkı çalma işlemi devam ediyor, duraklatma erteleniyor');
+                setTimeout(pauseAudio, 500);
+                return;
+            }
             
-            safePause().then(() => {
-                // Sunucuya duraklatma durumunu bildir
-                socket.emit('pause', {
-                    roomId: roomId,
-                    currentTime: audioPlayer.currentTime
+            // Şarkı duraklatma durumunu sunucuya bildir
+            if (roomId) {
+                socket.emit('pause', { 
+                    roomId, 
+                    currentTime: audioPlayer.currentTime 
                 });
-                
-                // Senkronizasyon interval'ini durdur
-                stopSyncInterval();
-                
-                // UI'ı güncelle
-                updatePlaybackControls();
-            });
+                console.log('Sunucuya şarkı duraklatma bildirimi gönderildi:', audioPlayer.currentTime);
+            }
+            
+            // Şarkıyı duraklat
+            safePause();
         }
 
         function playSong(index) {
@@ -902,21 +902,16 @@
         });
 
         socket.on('play', (data) => {
+            console.log('Sunucudan şarkı çalma bildirimi alındı:', data);
             isPlaying = true;
-            const currentTime = typeof data === 'object' ? data.currentTime : data;
-            const trackIndex = typeof data === 'object' && data.currentTrack !== undefined ? data.currentTrack : currentTrack;
             
-            // Eğer şarkı indeksi değiştiyse, şarkıyı değiştir
-            if (trackIndex !== currentTrack && trackIndex !== undefined) {
-                currentTrack = trackIndex;
-                // Şarkı değişikliği işlemi burada yapılacak
-                // Bu durumda playSong eventi zaten tetiklenecektir
-                return;
-            }
+            const currentTime = typeof data === 'object' ? data.currentTime : data;
             
             if (!isAudioLoaded) {
-                console.log('Şarkı henüz yüklenmemiş, çalma işlemi erteleniyor...');
+                console.log('Şarkı henüz yüklenmemiş, yükleniyor...');
                 pendingPlayRequest = true;
+                pendingSyncTime = currentTime;
+                loadAudio();
                 return;
             }
             
@@ -924,35 +919,41 @@
             audioPlayer.currentTime = currentTime;
             
             // Şarkıyı çal
-            safePlay().then(() => {
-                // Son senkronizasyon zamanını kaydet
-                lastSyncTime = Date.now();
-                
-                // Senkronizasyon interval'ini başlat
-                startSyncInterval();
-                
-                // UI'ı güncelle
-                updatePlaybackControls();
-            }).catch(error => {
-                console.error('Sunucudan gelen çalma komutu işlenirken hata:', error);
-            });
+            safePlay();
+            
+            // Senkronizasyon interval'ini başlat
+            startSyncInterval();
+            
+            // Son senkronizasyon zamanını kaydet
+            lastSyncTime = Date.now();
+            
+            // UI'ı güncelle
+            updatePlaybackControls();
         });
 
         socket.on('pause', (data) => {
+            console.log('Sunucudan şarkı duraklatma bildirimi alındı:', data);
             isPlaying = false;
+            
             const currentTime = typeof data === 'object' ? data.currentTime : data;
+            
+            if (!isAudioLoaded) {
+                console.log('Şarkı henüz yüklenmemiş, duraklatma işlemi atlanıyor');
+                pendingPlayRequest = false;
+                return;
+            }
             
             // Şarkı pozisyonunu ayarla
             audioPlayer.currentTime = currentTime;
             
             // Şarkıyı duraklat
-            safePause().then(() => {
-                // Senkronizasyon interval'ini durdur
-                stopSyncInterval();
-                
-                // UI'ı güncelle
-                updatePlaybackControls();
-            });
+            safePause();
+            
+            // Senkronizasyon interval'ini durdur
+            stopSyncInterval();
+            
+            // UI'ı güncelle
+            updatePlaybackControls();
         });
 
         socket.on('syncPlayback', (data) => {
@@ -1618,6 +1619,21 @@
         // Sayfa yüklendiğinde ses seviyesini ayarla
         window.addEventListener('DOMContentLoaded', function() {
             audioPlayer.volume = volumeControl.value / 100;
+        });
+
+        // Oynatma/duraklatma düğmesi
+        document.getElementById('playPauseBtn').addEventListener('click', function() {
+            if (!isAudioLoaded) {
+                showNotification('Şarkı yükleniyor, lütfen bekleyin...', 'info');
+                pendingPlayRequest = !isPlaying;
+                return;
+            }
+            
+            if (isPlaying) {
+                pauseAudio();
+            } else {
+                playAudio();
+            }
         });
     </script>
 </body>
