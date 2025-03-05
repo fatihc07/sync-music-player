@@ -950,6 +950,50 @@
                 }
             }
         }
+
+        // Login fonksiyonu
+        function login() {
+            const usernameInput = document.getElementById('username');
+            const username = usernameInput.value.trim();
+            
+            if (!username) {
+                showError('Lütfen bir kullanıcı adı girin');
+                return;
+            }
+            
+            if (!roomId) {
+                showError('Oda ID bulunamadı');
+                return;
+            }
+            
+            if (!socket.connected) {
+                showError('Sunucuya bağlantı kurulamadı');
+                return;
+            }
+            
+            // Kullanıcı adını global değişkene kaydet
+            window.username = username;
+            
+            // Odaya katılma isteği gönder
+            socket.emit('joinRoom', { roomId, username });
+            
+            // UI'ı güncelle
+            document.getElementById('loginSection').style.display = 'none';
+            document.getElementById('playerSection').style.display = 'block';
+            document.getElementById('userSection').style.display = 'block';
+            
+            // Oturum bilgisini kaydet
+            saveSession();
+            
+            showSuccess('Giriş başarılı!');
+        }
+
+        // Enter tuşu ile giriş yapma
+        document.getElementById('username').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                login();
+            }
+        });
     </script>
 </body>
 </html>
