@@ -184,20 +184,45 @@ function stopRoomSyncInterval(roomId) {
 }
 
 io.on('connection', (socket) => {
-    socket.on('createRoom', () => {
-        const roomId = Math.random().toString(36).substring(7);
-        rooms.set(roomId, {
-            songs: [],
-            users: new Map(),
-            currentTrack: 0,
-            isPlaying: false,
-            currentTime: 0,
-            lastSyncTime: Date.now()
-        });
-        socket.emit('roomCreated', roomId);
-        
-        // Yeni oda oluşturulduğunda kaydet
-        saveRoomsToFile();
+    socket.on('createRoom', (data, callback) => {
+        try {
+            console.log('Oda oluşturma isteği alındı');
+            
+            // Benzersiz bir oda ID'si oluştur
+            const roomId = generateRoomId();
+            
+            // Odayı oluştur
+            rooms.set(roomId, {
+                id: roomId,
+                users: new Map(),
+                songs: [],
+                isPlaying: false,
+                currentTrack: 0,
+                currentTime: 0,
+                lastSyncTime: Date.now(),
+                createdAt: Date.now()
+            });
+            
+            console.log(`Oda oluşturuldu: ${roomId}`);
+            
+            // Callback fonksiyonu varsa başarı durumunu bildir
+            if (callback && typeof callback === 'function') {
+                callback({ success: true });
+            }
+            
+            // Oda ID'sini istemciye gönder
+            socket.emit('roomCreated', roomId);
+        } catch (error) {
+            console.error('Oda oluşturma hatası:', error);
+            
+            // Callback fonksiyonu varsa hatayı bildir
+            if (callback && typeof callback === 'function') {
+                callback({ error: 'Oda oluşturulurken bir hata oluştu' });
+            }
+            
+            // Hata mesajını istemciye gönder
+            socket.emit('error', 'Oda oluşturulurken bir hata oluştu');
+        }
     });
 
     socket.on('joinRoom', ({ roomId, username }) => {

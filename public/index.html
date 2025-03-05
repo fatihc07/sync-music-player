@@ -508,10 +508,39 @@
         }
 
         function createRoom() {
-            socket.emit('createRoom');
+            console.log('Yeni oda oluşturma isteği gönderiliyor...');
+            showNotification('Oda oluşturuluyor...', 'info');
+            
+            // Sunucu bağlantısını kontrol et
+            if (!socket.connected) {
+                console.error('Sunucu bağlantısı yok, yeniden bağlanmaya çalışılıyor...');
+                showError('Sunucu bağlantısı yok. Lütfen sayfayı yenileyin.');
+                socket.connect();
+                return;
+            }
+            
+            // Oda oluşturma isteği gönder
+            socket.emit('createRoom', {}, (response) => {
+                // Callback fonksiyonu ekledik
+                if (response && response.error) {
+                    console.error('Oda oluşturma hatası:', response.error);
+                    showError('Oda oluşturulamadı: ' + response.error);
+                } else {
+                    console.log('Oda oluşturma isteği gönderildi, yanıt bekleniyor...');
+                }
+            });
+            
+            // 10 saniye içinde yanıt gelmezse hata göster
+            setTimeout(() => {
+                if (!roomId) {
+                    console.error('Oda oluşturma zaman aşımı');
+                    showError('Oda oluşturma zaman aşımına uğradı. Lütfen tekrar deneyin.');
+                }
+            }, 10000);
         }
 
         socket.on('roomCreated', (newRoomId) => {
+            console.log('Oda başarıyla oluşturuldu:', newRoomId);
             roomId = newRoomId;
             const roomLink = `${window.location.origin}?room=${roomId}`;
             
@@ -525,6 +554,9 @@
             
             // Oda oluşturulduğunda createJoinSection'ı gizle
             document.getElementById('createJoinSection').style.display = 'none';
+            
+            // Başarı mesajı göster
+            showSuccess('Oda başarıyla oluşturuldu!');
         });
 
         function login() {
