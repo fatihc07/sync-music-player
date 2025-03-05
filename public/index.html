@@ -217,7 +217,7 @@
                     </button>
                 </div>
             </div>
-        </div>
+    </div>
 
         <!-- Oda Oluşturma Bölümü -->
         <div id="createJoinSection" class="glass-effect rounded-xl p-6 mb-6">
@@ -225,7 +225,7 @@
                 <i class="fas fa-plus-circle"></i>
                 Yeni Oda Oluştur
             </button>
-        </div>
+    </div>
 
         <!-- Giriş Bölümü -->
         <div id="loginSection" style="display: none;" class="glass-effect rounded-xl p-6 mb-6">
@@ -237,7 +237,7 @@
                 </button>
             </div>
         </div>
-
+        
         <!-- Kullanıcılar Bölümü -->
         <div id="userSection" class="glass-effect rounded-xl p-6 mb-6">
             <div class="flex justify-between items-center mb-4">
@@ -339,60 +339,214 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.3.2/socket.io.js"></script>
     <script>
-        // Socket.IO bağlantısı
-        const socket = io(window.location.origin, {
-            reconnectionAttempts: 10,
-            timeout: 20000,
-            reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000
+        // Global değişkenler
+        let roomId = null;
+        let isHost = false;
+        let audioPlayer = null;
+        let socket = null;
+        let currentTrack = 0;
+        let isPlaying = false;
+        let downloadQueue = new Map(); // Şarkı indirme kuyruğu
+
+        // Sayfa yüklendiğinde çalışacak kodlar
+        document.addEventListener('DOMContentLoaded', () => {
+            audioPlayer = document.getElementById('audioPlayer');
+            socket = io();
+            setupSocketListeners();
+            setupAudioListeners();
+        });
+
+        // Socket.io event listener'ları
+        function setupSocketListeners() {
+            // Oda oluşturulduğunda
+            socket.on('roomCreated', (newRoomId) => {
+                roomId = newRoomId;
+                isHost = true;
+                showNotification('Oda oluşturuldu!', 'success');
+                updateRoomLink();
+            });
+
+            // Odaya katılma başarılı olduğunda
+            socket.on('joinedRoom', (data) => {
+                roomId = data.roomId;
+                isHost = data.isHost;
+                showNotification('Odaya katıldınız!', 'success');
+                updateRoomLink();
+            });
+
+            // Yeni şarkı eklendiğinde
+            socket.on('songAdded', (data) => {
+                showNotification(`${data.addedBy} yeni bir şarkı ekledi: ${data.songName}`, 'info');
+                downloadAndPrepareAudio(data.songUrl, data.songName);
+            });
+
+            // Host şarkıyı başlattığında
+            socket.on('hostStartedPlaying', (data) => {
+                if (!isHost) {
+                    const song = downloadQueue.get(data.songUrl);
+                    if (song && song.downloaded) {
+                        audioPlayer.currentTime = data.currentTime;
+                        audioPlayer.play();
+                        isPlaying = true;
+                        updatePlaybackControls();
+                    } else {
+                        showNotification('Şarkı yükleniyor, lütfen bekleyin...', 'info');
+                        if (song) {
+                            song.pendingPlay = true;
+                            song.pendingTime = data.currentTime;
+                        }
+                    }
+                }
+            });
+
+            // Host şarkıyı duraklattığında
+            socket.on('hostPausedPlaying', () => {
+                if (!isHost) {
+                    audioPlayer.pause();
+                    isPlaying = false;
+                    updatePlaybackControls();
+                }
+            });
+        }
+
+        // Audio player event listener'ları
+        function setupAudioListeners() {
+            audioPlayer.addEventListener('loadeddata', () => {
+                showNotification('Şarkı yüklendi ve çalmaya hazır', 'success');
+            });
+
+            audioPlayer.addEventListener('error', (e) => {
+                showNotification('Şarkı yüklenirken bir hata oluştu', 'error');
+                console.error('Audio player error:', e);
+            });
+
+            audioPlayer.addEventListener('ended', () => {
+                if (isHost) {
+                    playNextSong();
+                }
+            });
+        }
+
+        // Şarkıyı indir ve hazırla
+        async function downloadAndPrepareAudio(songUrl, songName) {
+            try {
+                showNotification(`${songName} indiriliyor...`, 'info');
+                
+                const songInfo = {
+                    url: songUrl,
+                    name: songName,
+                    downloaded: false,
+                    pendingPlay: false,
+                    pendingTime: 0
+                };
+                
+                downloadQueue.set(songUrl, songInfo);
+                
+                const response = await fetch(songUrl);
+                const blob = await response.blob();
+                const objectUrl = URL.createObjectURL(blob);
+                
+                songInfo.downloaded = true;
+                audioPlayer.src = objectUrl;
+                
+                showNotification(`${songName} başarıyla indirildi`, 'success');
+                
+                // Eğer bekleyen çalma isteği varsa
+                if (songInfo.pendingPlay) {
+                    audioPlayer.currentTime = songInfo.pendingTime;
+                    audioPlayer.play();
+                    isPlaying = true;
+                    updatePlaybackControls();
+                }
+            } catch (error) {
+                console.error('Şarkı indirme hatası:', error);
+                showNotification(`${songName} indirilirken hata oluştu`, 'error');
+            }
+        }
+
+        // Şarkıyı çal/duraklat
+        function togglePlayPause() {
+            if (!isHost) {
+                showNotification('Sadece host şarkıyı kontrol edebilir', 'warning');
+                return;
+            }
+
+            if (isPlaying) {
+                audioPlayer.pause();
+                isPlaying = false;
+                socket.emit('hostPaused', { roomId });
+            } else {
+                audioPlayer.play();
+                isPlaying = true;
+                socket.emit('hostStarted', { 
+                    roomId,
+                    currentTime: audioPlayer.currentTime,
+                    songUrl: audioPlayer.src
+                });
+            }
+            
+            updatePlaybackControls();
+        }
+
+        // Şarkı ekle
+        async function addSong(file) {
+            if (!file) return;
+            
+            try {
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const songData = e.target.result;
+                    socket.emit('addSong', {
+                        roomId,
+                        song: {
+                            name: file.name,
+                            data: songData
+                        }
+                    });
+                };
+                reader.readAsDataURL(file);
+            } catch (error) {
+                console.error('Şarkı yükleme hatası:', error);
+                showNotification('Şarkı yüklenirken bir hata oluştu', 'error');
+            }
+        }
+
+        // UI güncelleme fonksiyonları
+        function updatePlaybackControls() {
+            const playPauseBtn = document.getElementById('playPauseBtn');
+            if (playPauseBtn) {
+                playPauseBtn.innerHTML = isPlaying ? 
+                    '<i class="fas fa-pause"></i>' : 
+                    '<i class="fas fa-play"></i>';
+                
+                // Host değilse düğmeyi devre dışı bırak
+                playPauseBtn.disabled = !isHost;
+                playPauseBtn.title = isHost ? 
+                    'Çal/Duraklat' : 
+                    'Sadece host şarkıyı kontrol edebilir';
+            }
+        }
+
+        // Socket bağlantı durumunu kontrol et
+        socket.on('connect', () => {
+            console.log('Sunucuya bağlandı, socket ID:', socket.id);
+            document.getElementById('createJoinSection').style.opacity = '1';
+            document.getElementById('createJoinSection').style.pointerEvents = 'auto';
         });
         
-        // Global değişkenler
-        let username = '';
-        let currentTrack = 0;
-        let roomId = '';
-        let currentPlaylist = [];
-        let isPlaying = false;
-        let currentUsers = new Map();
-        let serverTimeOffset = 0;
-        let syncInterval;
-        let lastSyncTime = 0;
-        let syncTolerance = 0.8; // Senkronizasyon toleransını artırdık (0.5 -> 0.8)
-        let userInitiatedPlay = false; // Kullanıcının başlattığı çalma durumu
-        let syncRetryCount = 0; // Senkronizasyon yeniden deneme sayacı
-        let lastPlayedTrack = -1; // Son çalınan şarkı indeksi
-        let isAudioLoaded = false;
-        let isAudioBuffering = false;
-        let pendingPlayRequest = false;
-        let loadRetryCount = 0;
-        let maxLoadRetries = 3;
-        let isPlayInProgress = false;
-        let bufferingTimeout = null;
-        let isDownloadComplete = false;
-        let pendingSyncTime = 0;
-        let downloadStartTime = 0;
+        socket.on('disconnect', () => {
+            console.log('Sunucu bağlantısı kesildi');
+            document.getElementById('createJoinSection').style.opacity = '0.5';
+            document.getElementById('createJoinSection').style.pointerEvents = 'none';
+            showError('Sunucu bağlantısı kesildi. Yeniden bağlanılıyor...');
+        });
         
-        const audioPlayer = document.getElementById('audioPlayer');
-        const playlist = document.getElementById('playlist');
-        const volumeControl = document.getElementById('volumeControl');
-        const albumCover = document.getElementById('albumCover');
-        const currentSongName = document.getElementById('currentSongName');
-
-        // URL'den room ID'yi al
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.has('room')) {
-            roomId = urlParams.get('room');
-            const roomLink = `${window.location.origin}?room=${roomId}`;
-            
-            // Oda linkini üstteki bölümde göster
-            document.getElementById('roomLinkText').textContent = roomLink;
-            document.getElementById('roomLinkSection').style.display = 'block';
-            document.getElementById('createJoinSection').style.display = 'none';
-            document.getElementById('loginSection').style.display = 'block';
-            
-            // Oturum bilgisini kontrol et
-            checkSavedSession();
-        }
+        socket.on('connect_error', (error) => {
+            console.error('Bağlantı hatası:', error);
+            document.getElementById('createJoinSection').style.opacity = '0.5';
+            document.getElementById('createJoinSection').style.pointerEvents = 'none';
+            showError('Sunucuya bağlanılamadı. Lütfen internet bağlantınızı kontrol edin.');
+        });
         
         // Oda silme onay fonksiyonu
         function confirmDeleteRoom() {
@@ -506,856 +660,6 @@
                 }
             }
         }
-
-        // Socket bağlantı durumunu kontrol et
-        socket.on('connect', () => {
-            console.log('Sunucuya bağlandı, socket ID:', socket.id);
-            document.getElementById('createJoinSection').style.opacity = '1';
-            document.getElementById('createJoinSection').style.pointerEvents = 'auto';
-        });
-        
-        socket.on('disconnect', () => {
-            console.log('Sunucu bağlantısı kesildi');
-            document.getElementById('createJoinSection').style.opacity = '0.5';
-            document.getElementById('createJoinSection').style.pointerEvents = 'none';
-            showError('Sunucu bağlantısı kesildi. Yeniden bağlanılıyor...');
-        });
-        
-        socket.on('connect_error', (error) => {
-            console.error('Bağlantı hatası:', error);
-            document.getElementById('createJoinSection').style.opacity = '0.5';
-            document.getElementById('createJoinSection').style.pointerEvents = 'none';
-            showError('Sunucuya bağlanılamadı. Lütfen internet bağlantınızı kontrol edin.');
-        });
-        
-        // Yeni oda oluşturma fonksiyonu
-        function createRoom() {
-            // Butonun tıklandığını göster
-            const button = document.querySelector('#createJoinSection button');
-            const originalText = button.innerHTML;
-            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Oda Oluşturuluyor...';
-            button.disabled = true;
-            
-            console.log('Yeni oda oluşturma isteği gönderiliyor...');
-            
-            // Sunucu bağlantısını kontrol et
-            if (!socket.connected) {
-                console.error('Sunucu bağlantısı yok!');
-                showError('Sunucu bağlantısı yok. Lütfen sayfayı yenileyin.');
-                
-                // Butonu eski haline getir
-                setTimeout(() => {
-                    button.innerHTML = originalText;
-                    button.disabled = false;
-                }, 2000);
-                
-                return;
-            }
-            
-            // Doğrudan emit yerine timeout ile kontrol edelim
-            const createRoomTimeout = setTimeout(() => {
-                console.error('Oda oluşturma isteği zaman aşımına uğradı');
-                showError('Oda oluşturma isteği zaman aşımına uğradı. Lütfen tekrar deneyin.');
-                
-                // Butonu eski haline getir
-                button.innerHTML = originalText;
-                button.disabled = false;
-            }, 10000);
-            
-            // Oda oluşturma isteği gönder
-            socket.emit('createRoom', {}, (response) => {
-                clearTimeout(createRoomTimeout);
-                
-                if (response && response.error) {
-                    console.error('Oda oluşturma hatası:', response.error);
-                    showError('Oda oluşturulamadı: ' + response.error);
-                    
-                    // Butonu eski haline getir
-                    button.innerHTML = originalText;
-                    button.disabled = false;
-                } else if (response && response.success) {
-                    console.log('Oda oluşturma isteği başarıyla gönderildi, yanıt bekleniyor...');
-                }
-            });
-        }
-
-        // Oda oluşturulduğunda
-        socket.on('roomCreated', (newRoomId) => {
-            console.log('Oda başarıyla oluşturuldu:', newRoomId);
-            
-            if (!newRoomId) {
-                console.error('Geçersiz oda ID alındı');
-                showError('Geçersiz oda ID alındı. Lütfen tekrar deneyin.');
-                return;
-            }
-            
-            roomId = newRoomId;
-            const roomLink = `${window.location.origin}?room=${roomId}`;
-            
-            // Oda linkini üstteki bölümde göster
-            document.getElementById('roomLinkText').textContent = roomLink;
-            document.getElementById('roomLinkSection').style.display = 'block';
-            document.getElementById('loginSection').style.display = 'block';
-            
-            // URL'yi güncelle (sayfa yenilenmeden)
-            window.history.pushState({}, '', `?room=${roomId}`);
-            
-            // Oda oluşturulduğunda createJoinSection'ı gizle
-            document.getElementById('createJoinSection').style.display = 'none';
-            
-            // Başarı mesajı göster
-            showSuccess('Oda başarıyla oluşturuldu!');
-        });
-
-        function login() {
-            username = document.getElementById('username').value;
-            if (username.trim() !== '') {
-                document.getElementById('loginSection').style.display = 'none';
-                document.getElementById('createJoinSection').style.display = 'none';
-                document.getElementById('playerSection').style.display = 'block';
-                document.getElementById('userSection').style.display = 'block'; // Kullanıcılar bölümünü göster
-                
-                // Kullanıcı tarafından başlatıldı olarak işaretle
-                userInitiatedPlay = true;
-                
-                socket.emit('joinRoom', { roomId, username });
-                
-                // Oturum bilgisini kaydet
-                saveSession();
-            }
-        }
-
-        function addLocalFile() {
-            const files = document.getElementById('localFile').files;
-            let filesAdded = 0;
-            const totalFiles = files.length;
-            
-            if (totalFiles === 0) {
-                return;
-            }
-            
-            showSuccess(`${totalFiles} şarkı yükleniyor...`);
-            
-            for (let file of files) {
-                if (file.size > 50 * 1024 * 1024) {
-                    showError(`${file.name} dosyası çok büyük (Max: 50MB)`);
-                    continue;
-                }
-
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const song = {
-                        name: file.name,
-                        data: e.target.result,
-                        addedBy: username
-                    };
-                    socket.emit('addSong', { roomId, song });
-                    filesAdded++;
-
-                    if (filesAdded === totalFiles) {
-                        showSuccess(`${totalFiles} şarkı başarıyla eklendi`);
-                        // Dosya seçiciyi sıfırla
-                        document.getElementById('localFile').value = '';
-                    }
-                };
-                reader.onerror = function() {
-                    showError(`${file.name} yüklenirken hata oluştu`);
-                };
-                reader.readAsDataURL(file);
-            }
-        }
-
-        // Şarkı yükleme durumunu takip etmek için değişkenler
-        let isAudioLoaded = false;
-        let isAudioBuffering = false;
-        let pendingPlayRequest = false;
-        let lastPlayedTrack = null;
-        let loadRetryCount = 0;
-        let maxLoadRetries = 3;
-        let isPlayInProgress = false;
-        let bufferingTimeout = null;
-        
-        // Şarkı yükleme durumunu gösteren element
-        function showLoadingIndicator() {
-            const container = document.getElementById('nowPlayingInfo');
-            const existing = document.getElementById('loadingIndicator');
-            if (!existing) {
-                const loadingDiv = document.createElement('div');
-                loadingDiv.id = 'loadingIndicator';
-                loadingDiv.className = 'text-sm text-white/70 mt-2';
-                loadingDiv.innerHTML = '<i class="fas fa-cloud-download-alt"></i> Şarkı indiriliyor...';
-                container.appendChild(loadingDiv);
-            }
-        }
-        
-        function hideLoadingIndicator() {
-            const indicator = document.getElementById('loadingIndicator');
-            if (indicator) {
-                indicator.remove();
-            }
-        }
-        
-        // Şarkı indirip çalmaya hazırlayan fonksiyon
-        function downloadAndPrepareAudio(songUrl, syncTime) {
-            return new Promise((resolve, reject) => {
-                isDownloadComplete = false;
-                downloadStartTime = Date.now();
-                showLoadingIndicator();
-                
-                // Yeni bir Audio objesi oluştur
-                const tempAudio = new Audio();
-                
-                // Şarkı yüklendiğinde
-                tempAudio.addEventListener('canplaythrough', function onCanPlay() {
-                    console.log('Şarkı tamamen indirildi ve çalmaya hazır');
-                    isDownloadComplete = true;
-                    hideLoadingIndicator();
-                    
-                    // Event listener'ı kaldır
-                    tempAudio.removeEventListener('canplaythrough', onCanPlay);
-                    
-                    // Ana audio player'a şarkıyı aktar
-                    audioPlayer.src = songUrl;
-                    
-                    // Şarkı pozisyonunu ayarla ve çalmaya hazır ol
-                    audioPlayer.currentTime = syncTime;
-                    
-                    const downloadDuration = (Date.now() - downloadStartTime) / 1000;
-                    console.log(`Şarkı ${downloadDuration.toFixed(1)} saniyede indirildi`);
-                    
-                    showNotification(`Şarkı indirildi, senkronize ediliyor...`, 'success');
-                    resolve();
-                });
-                
-                // Hata durumunda
-                tempAudio.addEventListener('error', function onError(e) {
-                    console.error('Şarkı indirilirken hata:', e);
-                    hideLoadingIndicator();
-                    reject(e);
-                });
-                
-                // Şarkıyı yüklemeye başla
-                tempAudio.src = songUrl;
-                tempAudio.load();
-            });
-        }
-        
-        // Sunucudan gelen senkronizasyon durumunu işle
-        socket.on('syncState', async (state) => {
-            console.log('Senkronizasyon durumu alındı:', state);
-            
-            if (!state.currentTrack !== undefined && state.currentTrack !== currentTrack) {
-                // Yeni bir şarkı çalıyor
-                const song = currentPlaylist[state.currentTrack];
-                if (song) {
-                    try {
-                        // Önce şarkıyı indir ve hazırla
-                        await downloadAndPrepareAudio(song.data, state.currentTime);
-                        
-                        currentTrack = state.currentTrack;
-                        isPlaying = state.isPlaying;
-                        
-                        // Şarkı çalıyorsa başlat
-                        if (state.isPlaying) {
-                            const playPromise = audioPlayer.play();
-                            if (playPromise !== undefined) {
-                                playPromise.then(() => {
-                                    console.log('Şarkı başarıyla senkronize edildi ve çalıyor');
-                                    startSyncInterval();
-                                    showNotification('Odadaki şarkıya senkronize olundu', 'success');
-                                }).catch(error => {
-                                    console.error('Senkronizasyon sırasında çalma hatası:', error);
-                                    if (error.name === 'NotAllowedError') {
-                                        showNotification('Şarkıyı çalmak için ekrana dokunun', 'info');
-                                    }
-                                });
-                            }
-                        }
-                        
-                        updatePlaylistUI();
-                        updateNowPlayingInfo();
-                        
-                    } catch (error) {
-                        console.error('Şarkı indirme hatası:', error);
-                        showError('Şarkı indirilirken bir hata oluştu');
-                    }
-                }
-            } else {
-                // Sadece pozisyon senkronizasyonu
-                if (isDownloadComplete) {
-                    if (Math.abs(audioPlayer.currentTime - state.currentTime) > syncTolerance) {
-                        audioPlayer.currentTime = state.currentTime;
-                    }
-                    
-                    if (state.isPlaying !== isPlaying) {
-                        if (state.isPlaying) {
-                            audioPlayer.play().catch(error => {
-                                console.error('Çalma hatası:', error);
-                            });
-                        } else {
-                            audioPlayer.pause();
-                        }
-                        isPlaying = state.isPlaying;
-                    }
-                } else {
-                    // Şarkı hala indiriliyor, senkronizasyon zamanını sakla
-                    pendingSyncTime = state.currentTime;
-                }
-            }
-        });
-
-        // Şarkıyı çal
-        function playAudio() {
-            if (!isAudioLoaded) {
-                console.log('Şarkı henüz yüklenmemiş, yükleniyor...');
-                pendingPlayRequest = true;
-                loadAudio();
-                return;
-            }
-            
-            if (isPlayInProgress) {
-                console.log('Şarkı zaten çalma işlemi devam ediyor, tekrar denenmeyecek');
-                return;
-            }
-            
-            isPlayInProgress = true;
-            
-            // Şarkı çalma durumunu sunucuya bildir
-            if (roomId) {
-                socket.emit('play', { 
-                    roomId, 
-                    currentTime: audioPlayer.currentTime 
-                });
-                console.log('Sunucuya şarkı çalma bildirimi gönderildi:', audioPlayer.currentTime);
-            }
-            
-            // Şarkıyı çal
-            safePlay();
-        }
-        
-        // Şarkıyı duraklat
-        function pauseAudio() {
-            if (isPlayInProgress) {
-                console.log('Şarkı çalma işlemi devam ediyor, duraklatma erteleniyor');
-                setTimeout(pauseAudio, 500);
-                return;
-            }
-            
-            // Şarkı duraklatma durumunu sunucuya bildir
-            if (roomId) {
-                socket.emit('pause', { 
-                    roomId, 
-                    currentTime: audioPlayer.currentTime 
-                });
-                console.log('Sunucuya şarkı duraklatma bildirimi gönderildi:', audioPlayer.currentTime);
-            }
-            
-            // Şarkıyı duraklat
-            safePause();
-        }
-
-        function playSong(index) {
-            if (index >= 0 && index < currentPlaylist.length) {
-            currentTrack = index;
-            socket.emit('playSong', { roomId, index });
-            }
-        }
-        
-        // Ekle: Senkronizasyon isteği gönderen fonksiyon
-        function requestSync() {
-            if (roomId && socket.connected) {
-                socket.emit('requestSync', { roomId });
-                console.log('Senkronizasyon isteği gönderildi');
-            }
-        }
-        
-        // Ekle: Periyodik senkronizasyon başlat
-        function startSyncInterval() {
-            // Önceki interval'i temizle
-            if (syncInterval) {
-                clearInterval(syncInterval);
-            }
-            
-            // Her 3 saniyede bir senkronizasyon iste (5 saniyeden 3'e düşürdük)
-            syncInterval = setInterval(requestSync, 3000);
-            console.log('Senkronizasyon interval başlatıldı (3 saniye)');
-        }
-        
-        // Ekle: Periyodik senkronizasyon durdur
-        function stopSyncInterval() {
-            if (syncInterval) {
-                clearInterval(syncInterval);
-                syncInterval = null;
-                console.log('Senkronizasyon interval durduruldu');
-            }
-        }
-
-        socket.on('updatePlaylist', (songs) => {
-            currentPlaylist = songs;
-            updatePlaylistUI();
-            
-            // Şarkı sayısını güncelle
-            document.getElementById('songCount').textContent = songs.length;
-            
-            // Senkronizasyon iste
-            requestSync();
-        });
-
-        socket.on('play', (data) => {
-            console.log('Sunucudan şarkı çalma bildirimi alındı:', data);
-            isPlaying = true;
-            
-            const currentTime = typeof data === 'object' ? data.currentTime : data;
-            
-            if (!isAudioLoaded) {
-                console.log('Şarkı henüz yüklenmemiş, yükleniyor...');
-                pendingPlayRequest = true;
-                pendingSyncTime = currentTime;
-                loadAudio();
-                return;
-            }
-            
-            // Şarkı pozisyonunu ayarla
-            audioPlayer.currentTime = currentTime;
-            
-            // Şarkıyı çal
-            safePlay();
-            
-            // Senkronizasyon interval'ini başlat
-            startSyncInterval();
-            
-            // Son senkronizasyon zamanını kaydet
-            lastSyncTime = Date.now();
-            
-            // UI'ı güncelle
-            updatePlaybackControls();
-        });
-
-        socket.on('pause', (data) => {
-            console.log('Sunucudan şarkı duraklatma bildirimi alındı:', data);
-            isPlaying = false;
-            
-            const currentTime = typeof data === 'object' ? data.currentTime : data;
-            
-            if (!isAudioLoaded) {
-                console.log('Şarkı henüz yüklenmemiş, duraklatma işlemi atlanıyor');
-                pendingPlayRequest = false;
-                return;
-            }
-            
-            // Şarkı pozisyonunu ayarla
-            audioPlayer.currentTime = currentTime;
-            
-            // Şarkıyı duraklat
-            safePause();
-            
-            // Senkronizasyon interval'ini durdur
-            stopSyncInterval();
-            
-            // UI'ı güncelle
-            updatePlaybackControls();
-        });
-
-        socket.on('syncPlayback', (data) => {
-            // Son senkronizasyon zamanını kaydet
-            lastSyncTime = Date.now();
-            
-            // Sunucu zaman farkını güncelle
-            if (data.serverTime) {
-                serverTimeOffset = Date.now() - data.serverTime;
-            }
-            
-            // Şarkı değişmişse, yeni şarkıya geç
-            if (data.currentTrack !== undefined && data.currentTrack !== currentTrack) {
-                console.log(`Şarkı değişti: ${currentTrack} -> ${data.currentTrack}`);
-                playSong(data.currentTrack);
-                return;
-            }
-            
-            // Şarkı yüklenmemişse senkronizasyonu ertele
-            if (!isAudioLoaded) {
-                console.log('Şarkı henüz yüklenmemiş, senkronizasyon erteleniyor...');
-                return;
-            }
-            
-            // Çalma durumu değiştiyse güncelle
-            if (data.isPlaying !== undefined && data.isPlaying !== isPlaying) {
-                console.log(`Çalma durumu değişti: ${isPlaying} -> ${data.isPlaying}`);
-                
-                if (data.isPlaying) {
-                    // Şarkıyı çal
-                    audioPlayer.currentTime = data.currentTime;
-                    userInitiatedPlay = true; // Kullanıcı tarafından başlatıldı olarak işaretle
-                    
-                    const playPromise = audioPlayer.play();
-                    if (playPromise !== undefined) {
-                        playPromise.then(() => {
-                            console.log('Şarkı başarıyla çalınmaya başladı (senkronizasyon)');
-                            isPlaying = true;
-                            
-                            // UI'ı güncelle
-                            updatePlaylistUI();
-                            updateNowPlayingInfo();
-                        }).catch(error => {
-                            console.error('Senkronizasyon sırasında çalma hatası:', error);
-                            
-                            // Otomatik çalma engellendiyse kullanıcıya bildir
-                            if (error.name === 'NotAllowedError') {
-                                showNotification('Otomatik çalma engellendi. Lütfen çalma düğmesine tıklayın.', 'info');
-                                userInitiatedPlay = false;
-                            }
-                        });
-                    }
-                    
-                    // Senkronizasyon interval'ini başlat
-                    startSyncInterval();
-                } else {
-                    // Şarkıyı duraklat
-                    audioPlayer.pause();
-                    audioPlayer.currentTime = data.currentTime;
-                    isPlaying = false;
-                    
-                    // Senkronizasyon interval'ini durdur
-                    stopSyncInterval();
-                }
-                
-                // UI'ı güncelle
-                updatePlaylistUI();
-                updateNowPlayingInfo();
-                return;
-            }
-            
-            // Çalma durumunu kontrol et
-            if (isPlaying && !audioPlayer.paused && data.isPlaying) {
-                // Mevcut pozisyon ile sunucudan gelen pozisyon arasındaki farkı hesapla
-                const currentDiff = Math.abs(audioPlayer.currentTime - data.currentTime);
-                
-                // Eğer fark tolerans değerinden fazlaysa senkronize et
-                if (currentDiff > syncTolerance) {
-                    console.log(`Şarkı senkronize ediliyor: ${audioPlayer.currentTime.toFixed(2)}s -> ${data.currentTime.toFixed(2)}s (Fark: ${currentDiff.toFixed(2)}s)`);
-                    
-                    // Şarkı pozisyonunu ayarla
-                    audioPlayer.currentTime = data.currentTime;
-                    
-                    // Fark çok büyükse bildirim göster
-                    if (currentDiff > 5) {
-                        showNotification(`Şarkı senkronize edildi (${currentDiff.toFixed(1)} saniye fark)`, 'info');
-                    }
-                }
-            }
-        });
-
-        socket.on('syncState', (state) => {
-            console.log('Sunucudan senkronizasyon durumu alındı:', state);
-            
-            isPlaying = state.isPlaying;
-            currentTrack = state.currentTrack;
-            
-            // Sunucu zaman farkını güncelle
-            if (state.serverTime) {
-                serverTimeOffset = Date.now() - state.serverTime;
-            }
-            
-            // Şarkı değişmişse yeni şarkıyı yükle
-            if (currentTrack !== lastPlayedTrack && state.currentTrack !== undefined) {
-                lastPlayedTrack = currentTrack;
-                
-                // Şarkı URL'sini al
-                const songUrl = currentPlaylist[currentTrack]?.data;
-                if (songUrl) {
-                    console.log(`Yeni şarkı yükleniyor: ${currentPlaylist[currentTrack].name}`);
-                    
-                    // Önce mevcut şarkıyı duraklat
-                    safePause().then(() => {
-                        // Şarkıyı yükle
-                        audioPlayer.src = songUrl;
-                        isAudioLoaded = false;
-                        loadRetryCount = 0;
-                        
-                        // Şarkı yüklendiğinde
-                        audioPlayer.oncanplay = function() {
-                            isAudioLoaded = true;
-                            console.log(`Şarkı yüklendi: ${currentPlaylist[currentTrack].name}`);
-                            
-                            // Şarkı pozisyonunu ayarla
-                            audioPlayer.currentTime = state.currentTime;
-                            
-                            // Eğer şarkı çalıyorsa otomatik başlat
-                            if (state.isPlaying) {
-                                console.log(`Odada çalan şarkı senkronize ediliyor: ${state.currentTime.toFixed(2)} saniyeden başlatılıyor`);
-                                userInitiatedPlay = true;
-                                
-                                // Mobil cihazlarda otomatik çalma sorunlarını önlemek için
-                                // Kısa bir gecikme ekleyelim
-                                setTimeout(() => {
-                                    safePlay().then(() => {
-                                        console.log('Senkronizasyon başarılı, şarkı çalıyor');
-                                        
-                                        // Senkronizasyon interval'ini başlat
-                                        startSyncInterval();
-                                        
-                                        // Son senkronizasyon zamanını kaydet
-                                        lastSyncTime = Date.now();
-                                        
-                                        // Kullanıcıya bilgi ver
-                                        showNotification('Odada çalan şarkıya senkronize olundu', 'success');
-                                    }).catch(error => {
-                                        console.error('Senkronizasyon sırasında şarkı çalma hatası:', error);
-                                        showNotification('Şarkıyı çalmak için ekrana dokunun', 'info');
-                                    });
-                                }, 300);
-                            }
-                            
-                            // Bekleyen çalma isteği varsa işle
-                            if (pendingPlayRequest) {
-                                pendingPlayRequest = false;
-                                setTimeout(() => {
-                                    safePlay().catch(error => {
-                                        console.error('Bekleyen çalma isteği işlenirken hata:', error);
-                                    });
-                                }, 300);
-                            }
-                        };
-                        
-                        // Şarkı yüklenirken hata olursa
-                        audioPlayer.onerror = function(e) {
-                            console.error('Şarkı yüklenirken hata:', e);
-                            
-                            if (loadRetryCount < maxLoadRetries) {
-                                loadRetryCount++;
-                                console.log(`Şarkı yükleme yeniden deneniyor (${loadRetryCount}/${maxLoadRetries})...`);
-                                
-                                // 1 saniye bekleyip yeniden dene
-                                setTimeout(() => {
-                                    audioPlayer.src = songUrl;
-                                    audioPlayer.load();
-                                }, 1000);
-                            } else {
-                                showError(`Şarkı yüklenemedi: ${currentPlaylist[currentTrack].name}`);
-                            }
-                        };
-                    });
-                }
-            } else {
-                // Şarkı değişmediyse sadece pozisyonu güncelle
-                audioPlayer.currentTime = state.currentTime;
-            }
-            
-            // Şarkı çalıyorsa ve yüklendiyse
-            if (state.isPlaying && isAudioLoaded) {
-                // Şarkı pozisyonları arasındaki fark tolerans değerinden büyükse senkronize et
-                const timeDiff = Math.abs(audioPlayer.currentTime - state.currentTime);
-                if (timeDiff > syncTolerance) {
-                    console.log(`Şarkı pozisyonu senkronize ediliyor: ${audioPlayer.currentTime.toFixed(2)}s -> ${state.currentTime.toFixed(2)}s`);
-                    audioPlayer.currentTime = state.currentTime;
-                }
-                
-                // Şarkı çalmıyorsa başlat
-                if (audioPlayer.paused) {
-                    console.log('Şarkı duraklatılmış, çalmaya devam ediliyor');
-                    userInitiatedPlay = true;
-                    
-                    // Mobil cihazlarda otomatik çalma sorunlarını önlemek için
-                    // Kısa bir gecikme ekleyelim
-                    setTimeout(() => {
-                        safePlay().then(() => {
-                            // Senkronizasyon interval'ini başlat
-                            startSyncInterval();
-                        }).catch(error => {
-                            console.error('Şarkı çalma hatası:', error);
-                            showNotification('Şarkıyı çalmak için ekrana dokunun', 'info');
-                        });
-                    }, 300);
-                }
-            } else if (!state.isPlaying && !audioPlayer.paused) {
-                // Şarkı çalmıyorsa duraklat
-                console.log('Şarkı duraklatılıyor');
-                safePause().then(() => {
-                    // Senkronizasyon interval'ini durdur
-                    stopSyncInterval();
-                });
-            }
-            
-            // UI'ı güncelle
-            updatePlaylistUI();
-            updateNowPlayingInfo();
-        });
-
-        // Çalma listesi UI'ını güncelleyen fonksiyon
-        function updatePlaylistUI() {
-            playlist.innerHTML = '';
-            
-            // Çalma listesi boşsa bir mesaj göster
-            if (currentPlaylist.length === 0) {
-                const emptyMessage = document.createElement('li');
-                emptyMessage.className = 'p-4 text-center text-white/50';
-                emptyMessage.innerHTML = '<i class="fas fa-music mr-2"></i> Henüz şarkı eklenmemiş';
-                playlist.appendChild(emptyMessage);
-                document.getElementById('songCount').textContent = '0';
-                return;
-            }
-            
-            // Şarkı sayısını güncelle
-            document.getElementById('songCount').textContent = currentPlaylist.length;
-            
-            // Her şarkı için bir liste öğesi oluştur
-            currentPlaylist.forEach((song, index) => {
-                const li = document.createElement('li');
-                li.className = `playlist-item p-3 rounded-lg flex items-center gap-2 ${
-                    index === currentTrack ? 'bg-indigo-600' : 'bg-white/10 hover:bg-white/20'
-                }`;
-                li.dataset.index = index;
-                
-                // Sürükle-bırak için tutamaç ekleyelim
-                const dragHandle = document.createElement('span');
-                dragHandle.className = 'sortable-handle w-6 h-6 flex items-center justify-center rounded-full bg-white/10 shrink-0';
-                dragHandle.innerHTML = '<i class="fas fa-grip-vertical"></i>';
-                li.appendChild(dragHandle);
-                
-                // Şarkı numarası
-                const numberSpan = document.createElement('span');
-                numberSpan.className = 'w-6 h-6 flex items-center justify-center rounded-full bg-white/10 text-xs shrink-0';
-                numberSpan.textContent = index + 1;
-                li.appendChild(numberSpan);
-
-                // Şarkı adı ve ekleyen kişi
-                const nameContainer = document.createElement('div');
-                nameContainer.className = 'flex-1 min-w-0'; // min-width: 0 ekleyerek taşmayı önlüyoruz
-                
-                const nameSpan = document.createElement('div');
-                nameSpan.className = 'font-medium flex items-center';
-                nameSpan.title = song.name; // Tam adı tooltip olarak göster
-                
-                // Şarkı adını göster ve ekleme zamanını ekle
-                const songName = song.name.replace(/\.[^/.]+$/, ""); // Uzantıyı kaldır
-                
-                // Şarkı adı için container
-                const songNameContainer = document.createElement('div');
-                songNameContainer.className = 'song-name-container';
-                
-                const songNameElement = document.createElement('span');
-                songNameElement.className = 'song-name';
-                songNameElement.textContent = songName;
-                songNameContainer.appendChild(songNameElement);
-                nameSpan.appendChild(songNameContainer);
-                
-                // Ekleme zamanını göster
-                if (song.addedAt) {
-                    const addedDate = new Date(song.addedAt);
-                    const timeString = addedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                    const timeElement = document.createElement('span');
-                    timeElement.className = 'text-xs text-white/50 ml-2 shrink-0';
-                    timeElement.textContent = timeString;
-                    nameSpan.appendChild(timeElement);
-                }
-                
-                nameContainer.appendChild(nameSpan);
-                
-                // Ekleyen kişi bilgisi
-                if (song.addedBy) {
-                    const addedBySpan = document.createElement('div');
-                    addedBySpan.className = 'text-xs text-white/70 mt-1 flex items-center gap-1 truncate';
-                    addedBySpan.innerHTML = `<i class="fas fa-user-plus"></i> <span>Ekleyen: ${song.addedBy}</span>`;
-                    nameContainer.appendChild(addedBySpan);
-                }
-                
-                li.appendChild(nameContainer);
-
-                // Butonlar için container
-                const buttonContainer = document.createElement('div');
-                buttonContainer.className = 'flex items-center gap-1 shrink-0';
-
-                // En Üste Al butonu
-                if (index > 0) { // İlk şarkı zaten en üstte olduğu için ona buton eklemiyoruz
-                    const moveTopButton = document.createElement('button');
-                    moveTopButton.className = 'w-7 h-7 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 text-white';
-                    moveTopButton.innerHTML = '<i class="fas fa-arrow-up"></i>';
-                    moveTopButton.title = 'En Üste Al';
-                    moveTopButton.onclick = (e) => {
-                        e.stopPropagation();
-                        // Şarkıyı en üste taşı
-                        socket.emit('reorderPlaylist', {
-                            roomId,
-                            oldIndex: index,
-                            newIndex: 0
-                        });
-                    };
-                    buttonContainer.appendChild(moveTopButton);
-                }
-
-                // Oynat/Duraklat butonu
-                const playButton = document.createElement('button');
-                playButton.className = `w-7 h-7 flex items-center justify-center rounded-full ${
-                    index === currentTrack && isPlaying ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'
-                } text-white`;
-                playButton.innerHTML = index === currentTrack && isPlaying ? 
-                    '<i class="fas fa-pause"></i>' : 
-                    '<i class="fas fa-play"></i>';
-                playButton.onclick = (e) => {
-                    e.stopPropagation();
-                    playSong(index);
-                };
-                buttonContainer.appendChild(playButton);
-
-                li.appendChild(buttonContainer);
-
-                // Tıklama olayını sadece şarkı adına ekleyelim
-                nameContainer.onclick = (e) => {
-                    e.stopPropagation();
-                    playSong(index);
-                };
-                
-                playlist.appendChild(li);
-            });
-            
-            // Debug için konsola yazdır
-            console.log(`Çalma listesi güncellendi: ${currentPlaylist.length} şarkı`);
-            
-            // Sortable.js ile sürükle-bırak özelliğini etkinleştirelim
-            if (currentPlaylist.length > 1) {
-                initSortable();
-            }
-        }
-        
-        // Sortable.js ile sürükle-bırak özelliğini başlatan fonksiyon
-        function initSortable() {
-            if (window.playlistSortable) {
-                window.playlistSortable.destroy();
-            }
-            
-            window.playlistSortable = new Sortable(playlist, {
-                animation: 150,
-                handle: '.sortable-handle',
-                ghostClass: 'sortable-ghost',
-                dragClass: 'sortable-drag',
-                onEnd: function(evt) {
-                    const oldIndex = evt.oldIndex;
-                    const newIndex = evt.newIndex;
-                    
-                    if (oldIndex !== newIndex) {
-                        // Server'a bildir
-                        socket.emit('reorderPlaylist', {
-                            roomId,
-                            oldIndex,
-                            newIndex
-                        });
-                    }
-                }
-            });
-        }
-        
-        // Çalan şarkı değiştiğinde UI'ı güncelle
-        socket.on('currentTrackChanged', (index) => {
-            currentTrack = index;
-            updatePlaylistUI();
-        });
-        
-        // Şarkı sırası değiştirildiğinde bildirim göster
-        socket.on('playlistReordered', (data) => {
-            if (data.username !== username) {
-                showSuccess(`${data.username} "${data.songName}" şarkısının sırasını değiştirdi`);
-            }
-        });
 
         // Kullanıcı listesini güncelleyen fonksiyon
         function updateUsersUI(users) {
@@ -1475,57 +779,6 @@
             }, 1000);
         }
 
-        // Audio player hata yönetimi
-        audioPlayer.addEventListener('error', (e) => {
-            let errorMessage = 'Bilinmeyen bir hata oluştu';
-            if (e.target.error) {
-                switch (e.target.error.code) {
-                    case e.target.error.MEDIA_ERR_ABORTED:
-                        errorMessage = 'Şarkı yüklemesi iptal edildi';
-                        break;
-                    case e.target.error.MEDIA_ERR_NETWORK:
-                        errorMessage = 'Ağ hatası oluştu. Şarkı yüklenemiyor.';
-                        break;
-                    case e.target.error.MEDIA_ERR_DECODE:
-                        errorMessage = 'Şarkı çözümlenemedi. Format desteklenmiyor olabilir.';
-                        break;
-                    case e.target.error.MEDIA_ERR_SRC_NOT_SUPPORTED:
-                        errorMessage = 'Bu ses formatı desteklenmiyor veya dosya bulunamadı.';
-                        break;
-                }
-            }
-            console.error('Audio player hatası:', errorMessage, e);
-            showError(errorMessage);
-            isAudioLoaded = false;
-            
-            // Şarkıyı yeniden yüklemeyi dene
-            if (currentPlaylist.length > 0 && currentTrack >= 0 && currentTrack < currentPlaylist.length) {
-                setTimeout(() => {
-                    showNotification('Şarkı yeniden yükleniyor...', 'info');
-                    audioPlayer.src = currentPlaylist[currentTrack].data;
-                    audioPlayer.load();
-                }, 2000);
-            }
-        });
-
-        // Oynatma durumu değişikliklerini izle
-        audioPlayer.addEventListener('play', () => {
-            userInitiatedPlay = true; // Kullanıcı tarafından başlatıldı
-            if (!isPlaying) {
-                playAudio();
-                startSyncInterval();
-            }
-            updateNowPlayingInfo();
-        });
-
-        audioPlayer.addEventListener('pause', () => {
-            if (isPlaying) {
-                pauseAudio();
-                stopSyncInterval();
-            }
-            updateNowPlayingInfo();
-        });
-        
         // Şarkı ileri/geri sarıldığında senkronize et
         audioPlayer.addEventListener('seeked', () => {
             if (isPlaying) {
