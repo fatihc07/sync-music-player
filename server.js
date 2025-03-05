@@ -183,10 +183,18 @@ function stopRoomSyncInterval(roomId) {
     }
 }
 
+// Benzersiz oda ID'si oluştur
+function generateRoomId() {
+    return crypto.randomBytes(4).toString('hex');
+}
+
 io.on('connection', (socket) => {
+    console.log('Yeni kullanıcı bağlandı:', socket.id);
+    
+    // Oda oluşturma
     socket.on('createRoom', (data, callback) => {
         try {
-            console.log('Oda oluşturma isteği alındı');
+            console.log('Oda oluşturma isteği alındı:', socket.id);
             
             // Benzersiz bir oda ID'si oluştur
             const roomId = generateRoomId();
@@ -203,7 +211,7 @@ io.on('connection', (socket) => {
                 createdAt: Date.now()
             });
             
-            console.log(`Oda oluşturuldu: ${roomId}`);
+            console.log(`Oda oluşturuldu: ${roomId} (${socket.id} tarafından)`);
             
             // Callback fonksiyonu varsa başarı durumunu bildir
             if (callback && typeof callback === 'function') {

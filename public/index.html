@@ -225,7 +225,7 @@
                 <i class="fas fa-plus-circle"></i>
                 Yeni Oda Oluştur
             </button>
-    </div>
+        </div>
 
         <!-- Giriş Bölümü -->
         <div id="loginSection" style="display: none;" class="glass-effect rounded-xl p-6 mb-6">
@@ -236,7 +236,7 @@
                     <i class="fas fa-sign-in-alt mr-2"></i>Giriş Yap
                 </button>
             </div>
-    </div>
+        </div>
 
         <!-- Kullanıcılar Bölümü -->
         <div id="userSection" class="glass-effect rounded-xl p-6 mb-6">
@@ -507,40 +507,88 @@
             }
         }
 
+        // Socket bağlantı durumunu kontrol et
+        socket.on('connect', () => {
+            console.log('Sunucuya bağlandı, socket ID:', socket.id);
+            document.getElementById('createJoinSection').style.opacity = '1';
+            document.getElementById('createJoinSection').style.pointerEvents = 'auto';
+        });
+        
+        socket.on('disconnect', () => {
+            console.log('Sunucu bağlantısı kesildi');
+            document.getElementById('createJoinSection').style.opacity = '0.5';
+            document.getElementById('createJoinSection').style.pointerEvents = 'none';
+            showError('Sunucu bağlantısı kesildi. Yeniden bağlanılıyor...');
+        });
+        
+        socket.on('connect_error', (error) => {
+            console.error('Bağlantı hatası:', error);
+            document.getElementById('createJoinSection').style.opacity = '0.5';
+            document.getElementById('createJoinSection').style.pointerEvents = 'none';
+            showError('Sunucuya bağlanılamadı. Lütfen internet bağlantınızı kontrol edin.');
+        });
+        
+        // Yeni oda oluşturma fonksiyonu
         function createRoom() {
+            // Butonun tıklandığını göster
+            const button = document.querySelector('#createJoinSection button');
+            const originalText = button.innerHTML;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Oda Oluşturuluyor...';
+            button.disabled = true;
+            
             console.log('Yeni oda oluşturma isteği gönderiliyor...');
-            showNotification('Oda oluşturuluyor...', 'info');
             
             // Sunucu bağlantısını kontrol et
             if (!socket.connected) {
-                console.error('Sunucu bağlantısı yok, yeniden bağlanmaya çalışılıyor...');
+                console.error('Sunucu bağlantısı yok!');
                 showError('Sunucu bağlantısı yok. Lütfen sayfayı yenileyin.');
-                socket.connect();
+                
+                // Butonu eski haline getir
+                setTimeout(() => {
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                }, 2000);
+                
                 return;
             }
             
+            // Doğrudan emit yerine timeout ile kontrol edelim
+            const createRoomTimeout = setTimeout(() => {
+                console.error('Oda oluşturma isteği zaman aşımına uğradı');
+                showError('Oda oluşturma isteği zaman aşımına uğradı. Lütfen tekrar deneyin.');
+                
+                // Butonu eski haline getir
+                button.innerHTML = originalText;
+                button.disabled = false;
+            }, 10000);
+            
             // Oda oluşturma isteği gönder
             socket.emit('createRoom', {}, (response) => {
-                // Callback fonksiyonu ekledik
+                clearTimeout(createRoomTimeout);
+                
                 if (response && response.error) {
                     console.error('Oda oluşturma hatası:', response.error);
                     showError('Oda oluşturulamadı: ' + response.error);
-                } else {
-                    console.log('Oda oluşturma isteği gönderildi, yanıt bekleniyor...');
+                    
+                    // Butonu eski haline getir
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                } else if (response && response.success) {
+                    console.log('Oda oluşturma isteği başarıyla gönderildi, yanıt bekleniyor...');
                 }
             });
-            
-            // 10 saniye içinde yanıt gelmezse hata göster
-            setTimeout(() => {
-                if (!roomId) {
-                    console.error('Oda oluşturma zaman aşımı');
-                    showError('Oda oluşturma zaman aşımına uğradı. Lütfen tekrar deneyin.');
-                }
-            }, 10000);
         }
 
+        // Oda oluşturulduğunda
         socket.on('roomCreated', (newRoomId) => {
             console.log('Oda başarıyla oluşturuldu:', newRoomId);
+            
+            if (!newRoomId) {
+                console.error('Geçersiz oda ID alındı');
+                showError('Geçersiz oda ID alındı. Lütfen tekrar deneyin.');
+                return;
+            }
+            
             roomId = newRoomId;
             const roomLink = `${window.location.origin}?room=${roomId}`;
             
@@ -1570,23 +1618,6 @@
         // Sayfa yüklendiğinde ses seviyesini ayarla
         window.addEventListener('DOMContentLoaded', function() {
             audioPlayer.volume = volumeControl.value / 100;
-        });
-
-        // Bağlantı durumunu izle
-        socket.on('connect', () => {
-            console.log('Sunucuya bağlandı');
-            // Bağlantı kurulduğunda oturumu geri yükle
-            restoreSession();
-        });
-        
-        socket.on('disconnect', () => {
-            console.log('Sunucu bağlantısı kesildi');
-            showError('Sunucu bağlantısı kesildi. Yeniden bağlanılıyor...');
-        });
-        
-        socket.on('connect_error', (error) => {
-            console.error('Bağlantı hatası:', error);
-            showError('Sunucuya bağlanılamadı. Lütfen internet bağlantınızı kontrol edin.');
         });
     </script>
 </body>
