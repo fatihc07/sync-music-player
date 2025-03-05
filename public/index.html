@@ -583,10 +583,10 @@
             Array.from(files).forEach(file => {
                 // Dosya türü kontrolü
                 const validTypes = ['audio/mp3', 'audio/flac', 'audio/wav', 'audio/mpeg'];
+                const fileExt = file.name.split('.').pop().toLowerCase();
+                
                 if (!validTypes.includes(file.type) && 
-                    !file.name.endsWith('.mp3') && 
-                    !file.name.endsWith('.flac') && 
-                    !file.name.endsWith('.wav')) {
+                    !['mp3', 'flac', 'wav'].includes(fileExt)) {
                     showNotification(`${file.name} desteklenmeyen bir format`, 'error');
                     return;
                 }
@@ -599,23 +599,29 @@
 
                 showNotification(`${file.name} yükleniyor...`, 'info');
 
-                // FileReader ile dosyayı oku
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    socket.emit('addSong', {
-                        roomId,
-                        song: {
-                            name: file.name,
-                            data: e.target.result
-                        }
-                    });
-                };
+                // FormData oluştur
+                const formData = new FormData();
+                formData.append('song', file);
+                formData.append('roomId', roomId);
+                formData.append('username', username);
 
-                reader.onerror = () => {
-                    showNotification(`${file.name} okunamadı`, 'error');
-                };
-
-                reader.readAsDataURL(file);
+                // Fetch API ile dosyayı yükle
+                fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showNotification(`${file.name} başarıyla yüklendi`, 'success');
+                        // Sunucu yeni şarkıyı socket üzerinden bildirecek
+                    } else {
+                        showNotification(`${file.name} yüklenemedi: ${data.error}`, 'error');
+                    }
+                })
+                .catch(error => {
+                    showNotification(`${file.name} yüklenemedi: ${error}`, 'error');
+                });
             });
 
             // Input'u temizle
@@ -624,17 +630,20 @@
 
         // Socket.io event listener'ları
         socket.on('songUploaded', async (data) => {
-            showNotification(`${data.songName} başarıyla yüklendi`, 'success');
+            console.log('Şarkı yüklendi:', data);
             
             // Yeni şarkıyı çalma listesine ekle
-            currentPlaylist.push({
+            const newSong = {
                 name: data.songName,
-                url: data.songUrl
-            });
+                url: `/rooms/${roomId}/songs/${data.songPath}`, // Odaya özel URL
+                path: data.songPath // Sunucudaki dosya yolu
+            };
+            
+            currentPlaylist.push(newSong);
             
             // Şarkıyı indir ve hazırla
             try {
-                await downloadAndPrepareAudio(data.songUrl, data.songName);
+                await downloadAndPrepareAudio(newSong.url, newSong.name);
                 showNotification(`${data.songName} çalmaya hazır`, 'success');
             } catch (error) {
                 console.error('Şarkı indirme hatası:', error);
@@ -643,6 +652,7 @@
             
             // UI'ı güncelle
             updatePlaylistUI();
+            saveSession();
         });
 
         socket.on('songUploadError', (data) => {
@@ -651,7 +661,8 @@
 
         // Çalma listesi güncellendiğinde
         socket.on('playlistUpdated', async (data) => {
-            currentPlaylist = data.playlist;
+            console.log('Çalma listesi güncellendi:', data);
+            currentPlaylist = data.playlist || [];
             
             // Tüm şarkıları indir ve hazırla
             for (const song of currentPlaylist) {
@@ -665,6 +676,7 @@
             }
             
             updatePlaylistUI();
+            saveSession();
         });
 
         // UI güncelleme fonksiyonları
@@ -706,29 +718,36 @@
         
         // Oda silme onay fonksiyonu
         function confirmDeleteRoom() {
-            if (confirm('Bu odayı silmek istediğinize emin misiniz? Bu işlem geri alınamaz ve tüm şarkılar silinecektir.')) {
+            if (confirm('Bu odayı silmek istediğinize emin misiniz? Tüm şarkılar kalıcı olarak silinecektir.')) {
                 deleteRoom();
             }
         }
         
         // Oda silme fonksiyonu
         function deleteRoom() {
-            socket.emit('deleteRoom', { roomId });
-            showSuccess('Oda silme isteği gönderildi...');
+            if (confirm('Bu odayı silmek istediğinize emin misiniz? Tüm şarkılar kalıcı olarak silinecektir.')) {
+                socket.emit('deleteRoom', { roomId });
+                showSuccess('Oda siliniyor...');
+                
+                // Tüm şarkıları temizle
+                currentPlaylist = [];
+                downloadQueue.clear();
+                audioPlayer.src = '';
+                isPlaying = false;
+                
+                // UI'ı güncelle
+                updatePlaylistUI();
+                updateNowPlayingInfo();
+                
+                // Oturum bilgisini temizle
+                localStorage.removeItem('musicRoomSession');
+                
+                // Ana sayfaya yönlendir
+                setTimeout(() => {
+                    window.location.href = window.location.origin;
+                }, 3000);
+            }
         }
-        
-        // Oda silindiğinde
-        socket.on('roomDeleted', (data) => {
-            showError(data.message);
-            
-            // Oturum bilgisini temizle
-            localStorage.removeItem('musicRoomSession');
-            
-            // 3 saniye sonra ana sayfaya yönlendir
-            setTimeout(() => {
-                window.location.href = window.location.origin;
-            }, 3000);
-        });
         
         // Oturum bilgisini localStorage'a kaydet
         function saveSession() {
