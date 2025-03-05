@@ -352,8 +352,28 @@
         document.addEventListener('DOMContentLoaded', () => {
             audioPlayer = document.getElementById('audioPlayer');
             socket = io();
+            
+            // URL'den oda ID'sini kontrol et
+            const urlParams = new URLSearchParams(window.location.search);
+            const roomIdFromUrl = urlParams.get('room');
+            
+            if (roomIdFromUrl) {
+                roomId = roomIdFromUrl;
+                document.getElementById('createJoinSection').style.display = 'none';
+                document.getElementById('loginSection').style.display = 'block';
+                document.getElementById('roomLinkSection').style.display = 'block';
+                updateRoomLink();
+            }
+            
+            // Socket event listener'ları
             setupSocketListeners();
             setupAudioListeners();
+            
+            // Oturum kontrolü
+            checkSavedSession();
+            if (roomId) {
+                restoreSession();
+            }
         });
 
         // Socket.io event listener'ları
@@ -888,6 +908,48 @@
                 playAudio();
             }
         });
+
+        // Oda oluşturma fonksiyonu
+        function createRoom() {
+            console.log('Oda oluşturma isteği gönderiliyor...');
+            showNotification('Oda oluşturuluyor...', 'info');
+            
+            // Socket bağlantısını kontrol et
+            if (!socket.connected) {
+                showError('Sunucuya bağlantı kurulamadı. Lütfen sayfayı yenileyin.');
+                return;
+            }
+
+            // Oda oluşturma isteği gönder
+            socket.emit('createRoom', {}, (response) => {
+                if (response && response.success) {
+                    console.log('Oda başarıyla oluşturuldu');
+                    
+                    // Oda oluşturma başarılı olduğunda UI'ı güncelle
+                    document.getElementById('createJoinSection').style.display = 'none';
+                    document.getElementById('loginSection').style.display = 'block';
+                    document.getElementById('roomLinkSection').style.display = 'block';
+                    
+                    // Oda bağlantısını URL'e ekle
+                    const newUrl = `${window.location.origin}?room=${roomId}`;
+                    window.history.pushState({ path: newUrl }, '', newUrl);
+                } else {
+                    showError('Oda oluşturulurken bir hata oluştu: ' + (response?.error || 'Bilinmeyen hata'));
+                }
+            });
+        }
+
+        // Oda linkini güncelle
+        function updateRoomLink() {
+            if (roomId) {
+                const roomLink = `${window.location.origin}?room=${roomId}`;
+                const roomLinkText = document.getElementById('roomLinkText');
+                if (roomLinkText) {
+                    roomLinkText.textContent = roomLink;
+                    document.getElementById('roomLinkSection').style.display = 'block';
+                }
+            }
+        }
     </script>
 </body>
 </html>
