@@ -732,12 +732,18 @@
         
         // Oturum bilgisini localStorage'a kaydet
         function saveSession() {
-            if (roomId && username) {
+            if (roomId) {
                 const sessionData = {
                     roomId,
                     username,
                     timestamp: Date.now(),
-                    volume: volumeControl.value // Ses seviyesini de kaydet
+                    volume: volumeControl.value,
+                    playlist: currentPlaylist,
+                    currentTrack: currentTrack,
+                    isPlaying: isPlaying,
+                    currentTime: audioPlayer.currentTime,
+                    isHost: isHost,
+                    downloadQueue: Array.from(downloadQueue.entries())
                 };
                 localStorage.setItem('musicRoomSession', JSON.stringify(sessionData));
                 console.log('Oturum bilgisi kaydedildi:', sessionData);
@@ -773,7 +779,7 @@
         }
         
         // Sayfa yenilendiğinde oturumu geri yükle
-        function restoreSession() {
+        async function restoreSession() {
             const savedSession = localStorage.getItem('musicRoomSession');
             if (savedSession && socket.connected) {
                 try {
@@ -786,21 +792,65 @@
                     if (sessionAge < oneWeekInMs) {
                         // URL'deki oda ID'si ile kaydedilen oda ID'si aynı mı kontrol et
                         if (roomId && roomId === sessionData.roomId) {
+                            // Temel bilgileri geri yükle
                             username = sessionData.username;
+                            isHost = sessionData.isHost;
+                            currentPlaylist = sessionData.playlist || [];
+                            currentTrack = sessionData.currentTrack;
+                            isPlaying = sessionData.isPlaying;
                             
-                            // Otomatik giriş yap
+                            // Download queue'yu geri yükle
+                            downloadQueue = new Map(sessionData.downloadQueue || []);
+                            
+                            // UI'ı güncelle
                             document.getElementById('loginSection').style.display = 'none';
                             document.getElementById('createJoinSection').style.display = 'none';
                             document.getElementById('playerSection').style.display = 'block';
                             document.getElementById('userSection').style.display = 'block';
                             
-                            // Odaya katıl
-                            socket.emit('joinRoom', { roomId, username });
-                            
-                            // Kaydedilmiş ses seviyesini ayarla
+                            // Ses seviyesini ayarla
                             if (sessionData.volume) {
                                 volumeControl.value = sessionData.volume;
                                 audioPlayer.volume = sessionData.volume / 100;
+                            }
+                            
+                            // Çalma listesini güncelle
+                            updatePlaylistUI();
+                            
+                            // Odaya yeniden katıl
+                            socket.emit('joinRoom', { 
+                                roomId, 
+                                username,
+                                isReconnect: true,
+                                currentTrack: currentTrack,
+                                currentTime: sessionData.currentTime,
+                                isPlaying: isPlaying
+                            });
+                            
+                            // Eğer şarkı çalıyorsa, kaldığı yerden devam et
+                            if (currentPlaylist.length > 0 && currentTrack >= 0) {
+                                const currentSong = currentPlaylist[currentTrack];
+                                if (currentSong) {
+                                    const songInfo = downloadQueue.get(currentSong.url);
+                                    if (songInfo && songInfo.downloaded) {
+                                        audioPlayer.src = songInfo.url;
+                                        audioPlayer.currentTime = sessionData.currentTime || 0;
+                                        if (isPlaying) {
+                                            audioPlayer.play();
+                                        }
+                                        updateNowPlayingInfo();
+                                    } else {
+                                        // Şarkıyı yeniden indir
+                                        showNotification('Şarkı yeniden indiriliyor...', 'info');
+                                        await downloadAndPrepareAudio(currentSong.url, currentSong.name);
+                                        audioPlayer.src = songInfo.url;
+                                        audioPlayer.currentTime = sessionData.currentTime || 0;
+                                        if (isPlaying) {
+                                            audioPlayer.play();
+                                        }
+                                        updateNowPlayingInfo();
+                                    }
+                                }
                             }
                             
                             showSuccess('Oturumunuz geri yüklendi');
@@ -1254,6 +1304,37 @@
             if (e.key === 'Enter') {
                 login();
             }
+        });
+
+        // Sayfa yüklendiğinde ve belirli olaylarda oturum bilgisini kaydet
+        window.addEventListener('beforeunload', saveSession);
+        window.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                saveSession();
+            }
+        });
+        
+        // Şarkı durumu değiştiğinde oturum bilgisini güncelle
+        audioPlayer.addEventListener('timeupdate', () => {
+            if (isPlaying) {
+                saveSession();
+            }
+        });
+        
+        audioPlayer.addEventListener('play', saveSession);
+        audioPlayer.addEventListener('pause', saveSession);
+        
+        // Çalma listesi değiştiğinde oturum bilgisini güncelle
+        socket.on('playlistUpdated', () => {
+            saveSession();
+        });
+        
+        socket.on('songAdded', () => {
+            saveSession();
+        });
+        
+        socket.on('songRemoved', () => {
+            saveSession();
         });
     </script>
 </body>
