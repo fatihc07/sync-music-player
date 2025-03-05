@@ -389,11 +389,63 @@
             });
 
             // Odaya katılma başarılı olduğunda
-            socket.on('joinedRoom', (data) => {
+            socket.on('joinedRoom', async (data) => {
                 roomId = data.roomId;
                 isHost = data.isHost;
+                currentPlaylist = data.playlist || [];
+                
                 showNotification('Odaya katıldınız!', 'success');
                 updateRoomLink();
+                
+                // Çalma listesini güncelle
+                updatePlaylistUI();
+                
+                // Tüm şarkıları indir
+                if (currentPlaylist.length > 0) {
+                    showNotification(`${currentPlaylist.length} şarkı indiriliyor...`, 'info');
+                    
+                    const downloadProgress = document.createElement('div');
+                    downloadProgress.className = 'fixed bottom-4 right-4 p-4 bg-blue-600 rounded-lg shadow-lg z-50';
+                    downloadProgress.innerHTML = `
+                        <div class="flex items-center gap-2">
+                            <i class="fas fa-download animate-bounce"></i>
+                            <span>Şarkılar indiriliyor: 0/${currentPlaylist.length}</span>
+                        </div>
+                    `;
+                    document.body.appendChild(downloadProgress);
+                    
+                    let downloadedCount = 0;
+                    
+                    for (const song of currentPlaylist) {
+                        try {
+                            await downloadAndPrepareAudio(song.url, song.name);
+                            downloadedCount++;
+                            downloadProgress.querySelector('span').textContent = 
+                                `Şarkılar indiriliyor: ${downloadedCount}/${currentPlaylist.length}`;
+                        } catch (error) {
+                            console.error(`Şarkı indirme hatası (${song.name}):`, error);
+                        }
+                    }
+                    
+                    downloadProgress.remove();
+                    showNotification('Tüm şarkılar indirildi!', 'success');
+                    
+                    // Eğer host şu an çalıyorsa, aynı şarkıyı aynı zamandan başlat
+                    if (data.currentlyPlaying) {
+                        const { trackIndex, currentTime } = data.currentlyPlaying;
+                        if (trackIndex >= 0 && trackIndex < currentPlaylist.length) {
+                            const song = currentPlaylist[trackIndex];
+                            audioPlayer.src = song.url;
+                            audioPlayer.currentTime = currentTime;
+                            if (data.isPlaying) {
+                                audioPlayer.play();
+                                isPlaying = true;
+                            }
+                            currentTrack = trackIndex;
+                            updateNowPlayingInfo();
+                        }
+                    }
+                }
             });
 
             // Yeni şarkı eklendiğinde
@@ -403,19 +455,25 @@
             });
 
             // Host şarkıyı başlattığında
-            socket.on('hostStartedPlaying', (data) => {
+            socket.on('hostStartedPlaying', async (data) => {
                 if (!isHost) {
-                    const song = downloadQueue.get(data.songUrl);
-                    if (song && song.downloaded) {
+                    const song = currentPlaylist[data.trackIndex];
+                    if (!song) return;
+                    
+                    const songInfo = downloadQueue.get(song.url);
+                    if (songInfo && songInfo.downloaded) {
+                        audioPlayer.src = songInfo.url;
                         audioPlayer.currentTime = data.currentTime;
                         audioPlayer.play();
                         isPlaying = true;
+                        currentTrack = data.trackIndex;
                         updatePlaybackControls();
+                        updateNowPlayingInfo();
                     } else {
                         showNotification('Şarkı yükleniyor, lütfen bekleyin...', 'info');
-                        if (song) {
-                            song.pendingPlay = true;
-                            song.pendingTime = data.currentTime;
+                        if (songInfo) {
+                            songInfo.pendingPlay = true;
+                            songInfo.pendingTime = data.currentTime;
                         }
                     }
                 }
@@ -451,39 +509,40 @@
 
         // Şarkıyı indir ve hazırla
         async function downloadAndPrepareAudio(songUrl, songName) {
-            try {
-                showNotification(`${songName} indiriliyor...`, 'info');
-                
-                const songInfo = {
-                    url: songUrl,
-                    name: songName,
-                    downloaded: false,
-                    pendingPlay: false,
-                    pendingTime: 0
-                };
-                
-                downloadQueue.set(songUrl, songInfo);
-                
-                const response = await fetch(songUrl);
-                const blob = await response.blob();
-                const objectUrl = URL.createObjectURL(blob);
-                
-                songInfo.downloaded = true;
-                audioPlayer.src = objectUrl;
-                
-                showNotification(`${songName} başarıyla indirildi`, 'success');
-                
-                // Eğer bekleyen çalma isteği varsa
-                if (songInfo.pendingPlay) {
-                    audioPlayer.currentTime = songInfo.pendingTime;
-                    audioPlayer.play();
-                    isPlaying = true;
-                    updatePlaybackControls();
+            return new Promise(async (resolve, reject) => {
+                try {
+                    const songInfo = {
+                        url: songUrl,
+                        name: songName,
+                        downloaded: false,
+                        pendingPlay: false,
+                        pendingTime: 0
+                    };
+                    
+                    downloadQueue.set(songUrl, songInfo);
+                    
+                    const response = await fetch(songUrl);
+                    const blob = await response.blob();
+                    const objectUrl = URL.createObjectURL(blob);
+                    
+                    songInfo.downloaded = true;
+                    songInfo.url = objectUrl;
+                    
+                    // Eğer bu şarkı şu an çalması gereken şarkıysa
+                    if (songInfo.pendingPlay) {
+                        audioPlayer.src = objectUrl;
+                        audioPlayer.currentTime = songInfo.pendingTime;
+                        if (isPlaying) {
+                            audioPlayer.play();
+                        }
+                    }
+                    
+                    resolve(songInfo);
+                } catch (error) {
+                    console.error('Şarkı indirme hatası:', error);
+                    reject(error);
                 }
-            } catch (error) {
-                console.error('Şarkı indirme hatası:', error);
-                showNotification(`${songName} indirilirken hata oluştu`, 'error');
-            }
+            });
         }
 
         // Şarkıyı çal/duraklat
@@ -882,11 +941,12 @@
             }
             
             if (index >= 0 && index < currentPlaylist.length) {
-                currentTrack = index;
                 const song = currentPlaylist[index];
+                const songInfo = downloadQueue.get(song.url);
                 
-                if (song.url) {
-                    audioPlayer.src = song.url;
+                if (songInfo && songInfo.downloaded) {
+                    currentTrack = index;
+                    audioPlayer.src = songInfo.url;
                     audioPlayer.play();
                     isPlaying = true;
                     updatePlaybackControls();
@@ -896,9 +956,11 @@
                     socket.emit('hostStarted', {
                         roomId,
                         currentTime: 0,
-                        songUrl: song.url,
-                        trackIndex: index
+                        trackIndex: index,
+                        isPlaying: true
                     });
+                } else {
+                    showNotification('Şarkı yükleniyor, lütfen bekleyin...', 'info');
                 }
             }
         }
