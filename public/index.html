@@ -570,27 +570,102 @@
         }
 
         // Şarkı ekle
-        async function addSong(file) {
-            if (!file) return;
+        function addLocalFile() {
+            const fileInput = document.getElementById('localFile');
+            const files = fileInput.files;
             
-            try {
+            if (files.length === 0) {
+                showNotification('Lütfen bir şarkı seçin', 'error');
+                return;
+            }
+
+            // Her bir dosya için
+            Array.from(files).forEach(file => {
+                // Dosya türü kontrolü
+                const validTypes = ['audio/mp3', 'audio/flac', 'audio/wav', 'audio/mpeg'];
+                if (!validTypes.includes(file.type) && 
+                    !file.name.endsWith('.mp3') && 
+                    !file.name.endsWith('.flac') && 
+                    !file.name.endsWith('.wav')) {
+                    showNotification(`${file.name} desteklenmeyen bir format`, 'error');
+                    return;
+                }
+
+                // Dosya boyutu kontrolü (50MB limit)
+                if (file.size > 50 * 1024 * 1024) {
+                    showNotification(`${file.name} çok büyük (50MB limit)`, 'error');
+                    return;
+                }
+
+                showNotification(`${file.name} yükleniyor...`, 'info');
+
+                // FileReader ile dosyayı oku
                 const reader = new FileReader();
-                reader.onload = async (e) => {
-                    const songData = e.target.result;
+                reader.onload = (e) => {
                     socket.emit('addSong', {
                         roomId,
                         song: {
                             name: file.name,
-                            data: songData
+                            data: e.target.result
                         }
                     });
                 };
+
+                reader.onerror = () => {
+                    showNotification(`${file.name} okunamadı`, 'error');
+                };
+
                 reader.readAsDataURL(file);
-            } catch (error) {
-                console.error('Şarkı yükleme hatası:', error);
-                showNotification('Şarkı yüklenirken bir hata oluştu', 'error');
-            }
+            });
+
+            // Input'u temizle
+            fileInput.value = '';
         }
+
+        // Socket.io event listener'ları
+        socket.on('songUploaded', async (data) => {
+            showNotification(`${data.songName} başarıyla yüklendi`, 'success');
+            
+            // Yeni şarkıyı çalma listesine ekle
+            currentPlaylist.push({
+                name: data.songName,
+                url: data.songUrl
+            });
+            
+            // Şarkıyı indir ve hazırla
+            try {
+                await downloadAndPrepareAudio(data.songUrl, data.songName);
+                showNotification(`${data.songName} çalmaya hazır`, 'success');
+            } catch (error) {
+                console.error('Şarkı indirme hatası:', error);
+                showNotification(`${data.songName} indirilemedi`, 'error');
+            }
+            
+            // UI'ı güncelle
+            updatePlaylistUI();
+        });
+
+        socket.on('songUploadError', (data) => {
+            showNotification(`Şarkı yüklenemedi: ${data.error}`, 'error');
+        });
+
+        // Çalma listesi güncellendiğinde
+        socket.on('playlistUpdated', async (data) => {
+            currentPlaylist = data.playlist;
+            
+            // Tüm şarkıları indir ve hazırla
+            for (const song of currentPlaylist) {
+                if (!downloadQueue.has(song.url)) {
+                    try {
+                        await downloadAndPrepareAudio(song.url, song.name);
+                    } catch (error) {
+                        console.error(`${song.name} indirme hatası:`, error);
+                    }
+                }
+            }
+            
+            updatePlaylistUI();
+        });
 
         // UI güncelleme fonksiyonları
         function updatePlaybackControls() {
@@ -985,20 +1060,6 @@
             }
         }
 
-        // Socket event listener'larına ekle
-        socket.on('playlistUpdated', (data) => {
-            currentPlaylist = data.playlist;
-            updatePlaylistUI();
-        });
-
-        socket.on('songRemoved', (data) => {
-            if (data.success) {
-                currentPlaylist.splice(data.songIndex, 1);
-                updatePlaylistUI();
-                showNotification('Şarkı silindi', 'success');
-            }
-        });
-
         // Şarkı ileri/geri sarıldığında senkronize et
         audioPlayer.addEventListener('seeked', () => {
             if (isPlaying) {
@@ -1193,76 +1254,6 @@
             if (e.key === 'Enter') {
                 login();
             }
-        });
-
-        // Şarkı ekleme fonksiyonu
-        function addLocalFile() {
-            const fileInput = document.getElementById('localFile');
-            const files = fileInput.files;
-            
-            if (files.length === 0) {
-                showNotification('Lütfen bir şarkı seçin', 'error');
-                return;
-            }
-
-            // Her bir dosya için
-            Array.from(files).forEach(file => {
-                // Dosya türü kontrolü
-                const validTypes = ['audio/mp3', 'audio/flac', 'audio/wav', 'audio/mpeg'];
-                if (!validTypes.includes(file.type) && 
-                    !file.name.endsWith('.mp3') && 
-                    !file.name.endsWith('.flac') && 
-                    !file.name.endsWith('.wav')) {
-                    showNotification(`${file.name} desteklenmeyen bir format`, 'error');
-                    return;
-                }
-
-                // Dosya boyutu kontrolü (50MB limit)
-                if (file.size > 50 * 1024 * 1024) {
-                    showNotification(`${file.name} çok büyük (50MB limit)`, 'error');
-                    return;
-                }
-
-                showNotification(`${file.name} yükleniyor...`, 'info');
-
-                // FileReader ile dosyayı oku
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    socket.emit('addSong', {
-                        roomId,
-                        song: {
-                            name: file.name,
-                            data: e.target.result
-                        }
-                    }, (response) => {
-                        if (response.success) {
-                            showNotification(`${file.name} başarıyla yüklendi`, 'success');
-                        } else {
-                            showNotification(`${file.name} yüklenemedi: ${response.error}`, 'error');
-                        }
-                    });
-                };
-
-                reader.onerror = () => {
-                    showNotification(`${file.name} okunamadı`, 'error');
-                };
-
-                reader.readAsDataURL(file);
-            });
-
-            // Input'u temizle
-            fileInput.value = '';
-        }
-
-        // Socket.io event listener'ları
-        socket.on('songUploaded', (data) => {
-            showNotification(`${data.songName} başarıyla yüklendi`, 'success');
-            // Çalma listesini yenile
-            refreshPlaylist();
-        });
-
-        socket.on('songUploadError', (data) => {
-            showNotification(`Şarkı yüklenemedi: ${data.error}`, 'error');
         });
     </script>
 </body>
