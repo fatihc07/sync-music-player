@@ -347,6 +347,8 @@
         let currentTrack = 0;
         let isPlaying = false;
         let downloadQueue = new Map(); // Şarkı indirme kuyruğu
+        let currentPlaylist = [];
+        let playlistSortable = null;
 
         // Sayfa yüklendiğinde çalışacak kodlar
         document.addEventListener('DOMContentLoaded', () => {
@@ -724,10 +726,20 @@
             showSuccess(`${user.name} odadan ayrıldı`);
         });
 
+        // Şarkı eklendiğinde çalma listesini güncelle
         socket.on('songAdded', (data) => {
             if (data.addedBy !== username) {
                 showSuccess(`${data.addedBy} "${data.songName}" şarkısını ekledi`);
             }
+            
+            // Yeni şarkıyı çalma listesine ekle
+            currentPlaylist.push({
+                name: data.songName,
+                url: data.songUrl
+            });
+            
+            // UI'ı güncelle
+            updatePlaylistUI();
         });
 
         // Hata ve başarı mesajları için yardımcı fonksiyonlar
@@ -798,6 +810,132 @@
                 refreshButton.classList.remove('fa-spin');
             }, 1000);
         }
+
+        // Çalma listesi UI güncelleme
+        function updatePlaylistUI() {
+            const playlistElement = document.getElementById('playlist');
+            const songCountElement = document.getElementById('songCount');
+            
+            playlistElement.innerHTML = '';
+            
+            currentPlaylist.forEach((song, index) => {
+                const li = document.createElement('li');
+                li.className = 'playlist-item p-3 hover:bg-white/10 rounded-lg transition-all flex items-center gap-3';
+                li.dataset.index = index;
+                
+                // Şarkı uzantısını kaldır
+                const songName = song.name.replace(/\.[^/.]+$/, "");
+                
+                li.innerHTML = `
+                    <div class="sortable-handle cursor-grab">
+                        <i class="fas fa-grip-vertical text-white/50"></i>
+                    </div>
+                    <div class="flex-1 song-name-container">
+                        <span class="song-name">${songName}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="playSong(${index})" class="text-white/70 hover:text-white transition-colors">
+                            <i class="fas fa-play"></i>
+                        </button>
+                        <button onclick="removeSong(${index})" class="text-white/70 hover:text-red-500 transition-colors">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                `;
+                
+                playlistElement.appendChild(li);
+            });
+            
+            // Şarkı sayısını güncelle
+            songCountElement.textContent = currentPlaylist.length;
+            
+            // Sürükle-bırak özelliğini güncelle
+            if (playlistSortable) {
+                playlistSortable.destroy();
+            }
+            
+            playlistSortable = new Sortable(playlistElement, {
+                animation: 150,
+                handle: '.sortable-handle',
+                onEnd: function(evt) {
+                    const oldIndex = evt.oldIndex;
+                    const newIndex = evt.newIndex;
+                    
+                    // Sıralamayı güncelle
+                    const item = currentPlaylist.splice(oldIndex, 1)[0];
+                    currentPlaylist.splice(newIndex, 0, item);
+                    
+                    // Sunucuya bildir
+                    socket.emit('updatePlaylistOrder', {
+                        roomId,
+                        playlist: currentPlaylist
+                    });
+                }
+            });
+        }
+
+        // Şarkı çalma fonksiyonu
+        function playSong(index) {
+            if (!isHost) {
+                showNotification('Sadece host şarkı çalabilir', 'warning');
+                return;
+            }
+            
+            if (index >= 0 && index < currentPlaylist.length) {
+                currentTrack = index;
+                const song = currentPlaylist[index];
+                
+                if (song.url) {
+                    audioPlayer.src = song.url;
+                    audioPlayer.play();
+                    isPlaying = true;
+                    updatePlaybackControls();
+                    updateNowPlayingInfo();
+                    
+                    // Diğer kullanıcılara bildir
+                    socket.emit('hostStarted', {
+                        roomId,
+                        currentTime: 0,
+                        songUrl: song.url,
+                        trackIndex: index
+                    });
+                }
+            }
+        }
+
+        // Şarkı silme fonksiyonu
+        function removeSong(index) {
+            if (index >= 0 && index < currentPlaylist.length) {
+                const song = currentPlaylist[index];
+                
+                socket.emit('removeSong', {
+                    roomId,
+                    songIndex: index
+                }, (response) => {
+                    if (response.success) {
+                        currentPlaylist.splice(index, 1);
+                        updatePlaylistUI();
+                        showNotification('Şarkı silindi', 'success');
+                    } else {
+                        showNotification('Şarkı silinemedi', 'error');
+                    }
+                });
+            }
+        }
+
+        // Socket event listener'larına ekle
+        socket.on('playlistUpdated', (data) => {
+            currentPlaylist = data.playlist;
+            updatePlaylistUI();
+        });
+
+        socket.on('songRemoved', (data) => {
+            if (data.success) {
+                currentPlaylist.splice(data.songIndex, 1);
+                updatePlaylistUI();
+                showNotification('Şarkı silindi', 'success');
+            }
+        });
 
         // Şarkı ileri/geri sarıldığında senkronize et
         audioPlayer.addEventListener('seeked', () => {
